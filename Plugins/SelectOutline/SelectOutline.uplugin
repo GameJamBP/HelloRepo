@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 2,
+	"VersionName": "2.0",
+	"FriendlyName": "Select Outline",
+	"Description": "Custom-stencil based selection outline with screen-space marching stripes, injected through a Renderer post-process extension.",
+	"Category": "Rendering",
+	"CanContainContent": false,
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+			"Name": "SelectOutline",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
+		}
+	]
+}

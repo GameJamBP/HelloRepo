@@ -1,0 +1,388 @@
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/SceneTexturesCommon.ush"
+
+// NOTE: Every PS here is paired with FScreenPassVS, which outputs:
+//   TEXCOORD0   (noperspective float4 UVAndScreenPos)
+//   SV_POSITION (float4 SvPosition)
+// Keeping TEXCOORD0 first in all entry points is required by D3D12 stage signature linkage.
+
+// =====================================================================================================================
+// Pass 1: MaskPS
+// Reads CustomStencil, CustomDepth, and SceneDepth:
+//   - OutMask.r : binary silhouette mask (1 = selected, 0 = background) after the (2r+1)x(2r+1) dither-repair filter.
+//   - OutMask.g : depth-occluded visible replacement mask (1 = stencil matches AND CustomDepth is NOT behind SceneDepth).
+// =====================================================================================================================
+
+Texture2D CustomDepthTexture;
+Texture2D<uint2> StencilTexture;
+uint StencilValue;
+int FilterRadius;
+float FillConfidence;
+float KeepConfidence;
+float DepthOcclusionBias;
+
+float SampleStencilMatch(int2 Pixel, int2 RectMin, int2 RectMax)
+{
+	int2 Clamped = clamp(Pixel, RectMin, RectMax);
+	uint Raw = StencilTexture.Load(int3(Clamped, 0)) STENCIL_COMPONENT_SWIZZLE;
+	return (Raw == StencilValue) ? 1.0 : 0.0;
+}
+
+float SampleUnoccludedStencil(int2 Pixel, int2 RectMin, int2 RectMax)
+{
+	int2 Clamped = clamp(Pixel, RectMin, RectMax);
+	uint Raw = StencilTexture.Load(int3(Clamped, 0)) STENCIL_COMPONENT_SWIZZLE;
+	if (Raw != StencilValue)
+	{
+		return 0.0;
+	}
+
+	// Reverse-Z device depth (1 = near plane, 0 = far plane):
+	// If SceneDepthZ > CustomDepthZ + Bias, another scene object is closer to the camera and occludes the target.
+	float CustomDeviceZ = CustomDepthTexture.Load(int3(Clamped, 0)).r;
+	float SceneDeviceZ = LookupDeviceZ(uint2(Clamped));
+	return (CustomDeviceZ + DepthOcclusionBias >= SceneDeviceZ) ? 1.0 : 0.0;
+}
+
+void MaskPS(
+	noperspective float4 UVAndScreenPos : TEXCOORD0,
+	float4 SvPosition : SV_POSITION,
+	out float4 OutMask : SV_Target0)
+{
+	int2 RectMin = int2(View.ViewRectMin.xy);
+	int2 RectMax = RectMin + int2(View.ViewSizeAndInvSize.xy) - 1;
+	int2 Center = RectMin + int2(UVAndScreenPos.xy * View.ViewSizeAndInvSize.xy);
+
+	float CenterHit = SampleStencilMatch(Center, RectMin, RectMax);
+	float CenterVisible = SampleUnoccludedStencil(Center, RectMin, RectMax);
+
+	if (FilterRadius <= 0)
+	{
+		OutMask = float4(CenterHit, CenterVisible, 0.0, 1.0);
+		return;
+	}
+
+	float Hits = 0.0;
+	float VisibleHits = 0.0;
+	float Total = 0.0;
+	float HasLeft = 0.0;
+	float HasRight = 0.0;
+	float HasUp = 0.0;
+	float HasDown = 0.0;
+
+	[loop]
+	for (int y = -FilterRadius; y <= FilterRadius; ++y)
+	{
+		[loop]
+		for (int x = -FilterRadius; x <= FilterRadius; ++x)
+		{
+			int2 SamplePos = Center + int2(x, y);
+			float Hit = SampleStencilMatch(SamplePos, RectMin, RectMax);
+			float Vis = SampleUnoccludedStencil(SamplePos, RectMin, RectMax);
+
+			Hits += Hit;
+			VisibleHits += Vis;
+			Total += 1.0;
+
+			if (x < 0) HasLeft  = max(HasLeft,  Hit);
+			if (x > 0) HasRight = max(HasRight, Hit);
+			if (y < 0) HasUp    = max(HasUp,    Hit);
+			if (y > 0) HasDown  = max(HasDown,  Hit);
+		}
+	}
+
+	float InvTotal = 1.0 / max(Total, 1.0);
+	float Confidence = Hits * InvTotal;
+	float VisibleConfidence = VisibleHits * InvTotal;
+
+	// Enclosed on both horizontal and vertical axes -> inside a dithered surface, not outside an edge.
+	float Enclosed = (HasLeft * HasRight) * (HasUp * HasDown);
+
+	float SilhouetteMask = CenterHit;
+	if (CenterHit > 0.5)
+	{
+		SilhouetteMask = (Confidence >= KeepConfidence) ? 1.0 : 0.0;
+	}
+	else
+	{
+		SilhouetteMask = (Enclosed > 0.5 && Confidence >= FillConfidence) ? 1.0 : 0.0;
+	}
+
+	// Visible replacement mask: only 1 when the pixel (or dither-filled neighbor) is unoccluded by SceneDepth.
+	float VisibleMask = CenterVisible;
+	if (CenterHit < 0.5 && SilhouetteMask > 0.5)
+	{
+		VisibleMask = (VisibleConfidence >= FillConfidence) ? 1.0 : 0.0;
+	}
+
+	OutMask = float4(SilhouetteMask, VisibleMask * SilhouetteMask, 0.0, 1.0);
+}
+
+// =====================================================================================================================
+// Pass 2: DistanceXPS
+// Separable exact Euclidean distance transform (pass 1 of 2):
+// For each pixel, stores the smallest |dx| (in output pixels) to any silhouette mask pixel on the same row.
+// =====================================================================================================================
+
+Texture2D MaskTexture;
+SamplerState BilinearSampler;
+float2 OutputSize;
+int SearchRadius;
+
+void DistanceXPS(
+	noperspective float4 UVAndScreenPos : TEXCOORD0,
+	float4 SvPosition : SV_POSITION,
+	out float4 OutDistX : SV_Target0)
+{
+	float2 InvSize = 1.0 / OutputSize;
+	float2 UV = SvPosition.xy * InvSize;
+
+	float MinAbsDx = 1e4;
+
+	[loop]
+	for (int dx = -SearchRadius; dx <= SearchRadius; ++dx)
+	{
+		float2 SampleUV = clamp(UV + float2((float)dx * InvSize.x, 0.0), 0.5 * InvSize, 1.0 - 0.5 * InvSize);
+		float M = MaskTexture.SampleLevel(BilinearSampler, SampleUV, 0).r;
+		if (M >= 0.5)
+		{
+			MinAbsDx = min(MinAbsDx, abs((float)dx));
+		}
+	}
+
+	OutDistX = float4(MinAbsDx, 0.0, 0.0, 1.0);
+}
+
+// =====================================================================================================================
+// Pass 3: CompositePS
+//   1. FilmMask: inside the unoccluded stencil region (Mask.g > 0), applies one of the 5 FilmMask modes:
+//        0 = None          (keep original scene color)
+//        1 = RenderTarget  (sample ReplaceTexture)
+//        2 = SolidColor    (fill with SolidColor)
+//        3 = Checkerboard  (two-color screen-space checkerboard)
+//        4 = ColorGrading  (classic cinematic Teal & Orange + filmic S-curve contrast)
+//   2. Outline: outside the silhouette, completes the 2D Euclidean distance transform along Y and draws the
+//        anti-aliased marching-stripe outline.
+//   3. FilmMode (global): applies global warm yellowish vintage film color grading (controlled by 0..1 slider) and
+//        eases in widescreen top/bottom black bars matching FilmAspectRatio (controlled by 0..1 slider).
+// =====================================================================================================================
+
+Texture2D SceneColorTexture;
+Texture2D DistanceXTexture;
+Texture2D ReplaceTexture;
+SamplerState PointSampler;
+SamplerState ReplaceSampler;
+
+float4 ColorRect;            // xy = min, zw = size
+float2 ColorInvExtent;
+float4 OutputRect;           // xy = min, zw = size
+float4 OutlineColor;
+float4 GapColor;
+float4 StripeParams;         // x = StripeWidth, y = StripeGap, z = Phase (px), w = Enabled
+float4 ReplaceUVParams;      // xy = Tiling, zw = Offset
+float4 SolidColor;           // rgba for SolidColor mode
+float4 CheckerColorA;        // rgba for Checkerboard mode A
+float4 CheckerColorB;        // rgba for Checkerboard mode B
+float4 GradingShadowTint;    // rgba for FilmMask ColorGrading shadow tint
+float4 GradingHighlightTint; // rgba for FilmMask ColorGrading highlight tint
+float4 GradingParams;        // x = Intensity, y = Contrast, z = Saturation, w = CheckerSize
+float2 FillParams;           // x = Opacity, y = IgnoreReplaceAlpha (0/1)
+int FillMode;                // 0 = None, 1 = RenderTarget, 2 = SolidColor, 3 = Checkerboard, 4 = ColorGrading
+float Thickness;
+float4 FilmModeParams;       // x = AspectRatio, y = BlackBarAmount(0..1), z = GradingAmount(0..1), w = Enabled(0/1)
+float4 FilmModeTint;         // rgb = WarmYellowTint, a = Contrast
+float4 FilmModeShadowLift;   // rgb = SepiaShadowLift, a = Vignette
+float FilmModeSaturation;
+
+float3 ApplyCinematicGrading(float3 Color)
+{
+	float Intensity  = saturate(GradingParams.x);
+	float Contrast   = max(GradingParams.y, 0.1);
+	float Saturation = max(GradingParams.z, 0.0);
+
+	// 1. Saturation around Rec.709 luminance
+	float Luma = dot(Color, float3(0.2126, 0.7152, 0.0722));
+	float3 Graded = max(lerp(Luma.xxx, Color, Saturation), 0.0);
+
+	// 2. Filmic S-curve contrast around mid-grey (0.5 in post-tonemap display space)
+	Graded = saturate(0.5 + (Graded - 0.5) * Contrast);
+	float3 SmoothSCurve = Graded * Graded * (3.0 - 2.0 * Graded);
+	Graded = lerp(Graded, SmoothSCurve, saturate((Contrast - 1.0) * 0.5));
+
+	// 3. Classic Teal & Orange split-toning (cool teal shadows + warm amber/orange highlights)
+	float GradedLuma = dot(Graded, float3(0.2126, 0.7152, 0.0722));
+	float ShadowWeight = (1.0 - smoothstep(0.0, 0.65, GradedLuma)) * saturate(GradingShadowTint.a);
+	float HighlightWeight = smoothstep(0.30, 1.0, GradedLuma) * saturate(GradingHighlightTint.a);
+
+	float3 SplitToned = Graded;
+	SplitToned = lerp(SplitToned, SplitToned * GradingShadowTint.rgb + GradingShadowTint.rgb * 0.15, ShadowWeight * 0.65);
+	SplitToned = lerp(SplitToned, 1.0 - (1.0 - SplitToned) * (1.0 - GradingHighlightTint.rgb * 0.6), HighlightWeight * 0.55);
+
+	return lerp(Color, saturate(SplitToned), Intensity);
+}
+
+float3 ApplyGlobalFilmMode(float3 Color, float2 LocalUV)
+{
+	if (FilmModeParams.w < 0.5)
+	{
+		return Color;
+	}
+
+	// 1. Global Warm Yellowish Vintage Film Color Grading (0 = ungraded, 1 = fully graded)
+	float GradingAmount = saturate(FilmModeParams.z);
+	if (GradingAmount > 1e-4)
+	{
+		float Contrast   = max(FilmModeTint.a, 0.1);
+		float Saturation = max(FilmModeSaturation, 0.0);
+		float Vignette   = saturate(FilmModeShadowLift.a);
+
+		// Slightly desaturate toward Rec.709 luminance for nostalgic film stock response
+		float Luma = dot(Color, float3(0.2126, 0.7152, 0.0722));
+		float3 Film = max(lerp(Luma.xxx, Color, Saturation), 0.0);
+
+		// Soft filmic S-curve contrast
+		Film = saturate(0.5 + (Film - 0.5) * Contrast);
+		float3 SCurve = Film * Film * (3.0 - 2.0 * Film);
+		Film = lerp(Film, SCurve, 0.35);
+
+		// Warm golden-yellow film stock tint + faded warm sepia shadow lift
+		Film = Film * FilmModeTint.rgb + FilmModeShadowLift.rgb * (1.0 - Film);
+
+		// Subtle cinematic lens vignette around screen edges
+		float2 CenteredUV = (LocalUV - 0.5) * float2(1.0, 0.75);
+		float VigFactor = 1.0 - dot(CenteredUV, CenteredUV) * (Vignette * 2.2);
+		Film *= saturate(VigFactor);
+
+		Color = lerp(Color, saturate(Film), GradingAmount);
+	}
+
+	// 2. Widescreen Letterbox Black Bars controlled by a center aspect-ratio rectangle + smooth ease-in slider (0..1)
+	float BarSlider = saturate(FilmModeParams.y);
+	if (BarSlider > 1e-4)
+	{
+		float ViewportAspect = OutputRect.z / max(OutputRect.w, 1.0);
+		float TargetAspect   = max(FilmModeParams.x, 0.1);
+
+		// Full-progress visible half-size in UV space around the screen center (0.5, 0.5).
+		// When TargetAspect > ViewportAspect (e.g. 2.39 on 16:9), TargetHalfHeight < 0.5 -> top & bottom black bars.
+		float TargetHalfHeight = 0.5 * saturate(ViewportAspect / TargetAspect);
+		float TargetHalfWidth  = 0.5 * saturate(TargetAspect / ViewportAspect);
+
+		// Smooth ease-in/out curve (smoothstep) as BarSlider goes from 0 (no bars) to 1 (full aspect-ratio bars)
+		float Eased = BarSlider * BarSlider * (3.0 - 2.0 * BarSlider);
+		float2 HalfRectUV = lerp(float2(0.5, 0.5), float2(TargetHalfWidth, TargetHalfHeight), Eased);
+
+		// Distance outside the center rectangle in output pixels (1px anti-aliased edge)
+		float2 EdgeDistPx = (abs(LocalUV - 0.5) - HalfRectUV) * OutputRect.zw;
+		float OutsidePx = max(EdgeDistPx.x, EdgeDistPx.y);
+		float BarMask = smoothstep(-0.5, 0.5, OutsidePx);
+
+		Color = lerp(Color, float3(0.0, 0.0, 0.0), BarMask);
+	}
+
+	return Color;
+}
+
+float ComputeStripeFactor(float2 ScreenPixel)
+{
+	if (StripeParams.w < 0.5)
+	{
+		return 1.0;
+	}
+
+	float Width = max(StripeParams.x, 1.0);
+	float Gap = max(StripeParams.y, 0.0);
+	float Period = Width + Gap;
+	float Duty = Width / Period;
+
+	// 45-degree screen-space diagonal coordinates + CPU-accumulated flow & camera rotation offset.
+	float Coord = (ScreenPixel.x + ScreenPixel.y) * 0.70710678 - StripeParams.z;
+	float t = frac(Coord / Period);
+
+	// Anti-aliased square wave: 1 inside the stripe [0, Duty], 0 inside the gap (Duty, 1).
+	float Feather = clamp(0.70710678 / Period, 0.001, 0.25);
+	float EdgeIn = smoothstep(0.0, Feather, t);
+	float EdgeOut = 1.0 - smoothstep(Duty - Feather, Duty, t);
+	return saturate(EdgeIn * EdgeOut);
+}
+
+void CompositePS(
+	noperspective float4 UVAndScreenPos : TEXCOORD0,
+	float4 SvPosition : SV_POSITION,
+	out float4 OutColor : SV_Target0)
+{
+	float2 LocalPixel = SvPosition.xy - OutputRect.xy;
+	float2 LocalUV = LocalPixel / OutputRect.zw;
+
+	float2 ScenePixel = ColorRect.xy + LocalUV * ColorRect.zw;
+	float4 BaseColor = SceneColorTexture.SampleLevel(PointSampler, ScenePixel * ColorInvExtent, 0);
+
+	float2 Masks = MaskTexture.SampleLevel(BilinearSampler, LocalUV, 0).rg;
+	float SilhouetteMask = Masks.r;
+	float VisibleMask = Masks.g;
+
+	// 1. Apply FilmMask on unoccluded stencil pixels (VisibleMask > 0).
+	float BaseBlend = saturate(VisibleMask * FillParams.x);
+	if (FillMode != 0 && BaseBlend > 1e-3)
+	{
+		if (FillMode == 1) // RenderTarget / Texture
+		{
+			float2 ReplaceUV = LocalUV * ReplaceUVParams.xy + ReplaceUVParams.zw;
+			float4 TexColor = ReplaceTexture.SampleLevel(ReplaceSampler, ReplaceUV, 0);
+			float TexAlpha = (FillParams.y > 0.5) ? 1.0 : TexColor.a;
+			BaseColor.rgb = lerp(BaseColor.rgb, TexColor.rgb, saturate(BaseBlend * TexAlpha));
+		}
+		else if (FillMode == 2) // Solid Color
+		{
+			BaseColor.rgb = lerp(BaseColor.rgb, SolidColor.rgb, saturate(BaseBlend * SolidColor.a));
+		}
+		else if (FillMode == 3) // Checkerboard
+		{
+			float CellSize = max(GradingParams.w, 1.0);
+			int2 Cell = int2(floor(LocalPixel / CellSize));
+			float Parity = (float)((Cell.x + Cell.y) & 1);
+			float4 CheckerColor = (Parity > 0.5) ? CheckerColorB : CheckerColorA;
+			BaseColor.rgb = lerp(BaseColor.rgb, CheckerColor.rgb, saturate(BaseBlend * CheckerColor.a));
+		}
+		else if (FillMode == 4) // Classic Cinematic Color Grading
+		{
+			float3 GradedColor = ApplyCinematicGrading(BaseColor.rgb);
+			BaseColor.rgb = lerp(BaseColor.rgb, GradedColor, BaseBlend);
+		}
+	}
+
+	// 2. Draw outer selection outline when outside the silhouette and Thickness > 0.
+	if (SilhouetteMask < 0.5 && Thickness > 0.0)
+	{
+		float InvHeight = 1.0 / OutputRect.w;
+		float MinDistSq = 1e8;
+
+		[loop]
+		for (int dy = -SearchRadius; dy <= SearchRadius; ++dy)
+		{
+			float2 SampleUV = clamp(LocalUV + float2(0.0, (float)dy * InvHeight), 0.5 / OutputRect.zw, 1.0 - 0.5 / OutputRect.zw);
+			float Dx = DistanceXTexture.SampleLevel(PointSampler, SampleUV, 0).r;
+			float Dy = (float)dy;
+			MinDistSq = min(MinDistSq, Dx * Dx + Dy * Dy);
+		}
+
+		float Dist = sqrt(MinDistSq);
+
+		// 1px smooth outer falloff at Dist == Thickness; suppressed inside the mask.
+		float OuterAlpha = 1.0 - smoothstep(Thickness - 0.5, Thickness + 0.5, Dist);
+		float EdgeAlpha = OuterAlpha * saturate((0.5 - SilhouetteMask) * 2.0);
+
+		if (EdgeAlpha > 1e-3)
+		{
+			float Stripe = ComputeStripeFactor(LocalPixel);
+			float4 PatternColor = lerp(GapColor, OutlineColor, Stripe);
+			float FinalAlpha = EdgeAlpha * PatternColor.a;
+			BaseColor.rgb = lerp(BaseColor.rgb, PatternColor.rgb, FinalAlpha);
+		}
+	}
+
+	// 3. Apply global FilmMode (vintage yellow film grading + eased aspect-ratio black bars).
+	BaseColor.rgb = ApplyGlobalFilmMode(BaseColor.rgb, LocalUV);
+
+	OutColor = BaseColor;
+}
