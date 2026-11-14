@@ -57,6 +57,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Select Shell|State")
 	bool bIsPlayerPassThroughActive = false;
 
+	/** Runtime diagnostic for player collision contact and teleport eligibility. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Select Shell|State")
+	FString PlayerPortalStatus;
+
+	/** Extra collision margin to detect contact even when movement stops just short of a surface. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Shell|Portal", meta = (ClampMin = "0.1", Units = "cm"))
+	float PlayerContactMargin = 2.f;
+
 	/** True when renderable components on this Actor are currently hidden due to bFilmMode + Checkerboard. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Select Shell|State")
 	bool bAreRenderablesHiddenByFilmMode = false;
@@ -82,6 +90,10 @@ public:
 	bool IsSelectActorRecording() const { return bIsSelectActorRecording; }
 
 private:
+	void CheckPlayerPortalContact();
+	FVector PreviousPlayerLocation = FVector::ZeroVector;
+	bool bHasPreviousPlayerLocation = false;
+	bool bPlayerWasTouching = false;
 	struct FCachedCollisionState
 	{
 		ECollisionResponse PawnResponse = ECR_Block;

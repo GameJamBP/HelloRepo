@@ -2,12 +2,18 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/ShapeComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "CutActor.h"
+#include "Kismet/GameplayStatics.h"
+#include "CollisionShape.h"
+#include "GameFramework/Pawn.h"
 
 ASelectableActorShell::ASelectableActorShell()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
+	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
 
 	DefaultSceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("DefaultSceneRoot"));
 	SetRootComponent(DefaultSceneRoot);
@@ -54,6 +60,90 @@ void ASelectableActorShell::Tick(float DeltaTime)
 	}
 
 	RefreshEffectsFromSubsystemState();
+	CheckPlayerPortalContact();
+}
+
+void ASelectableActorShell::CheckPlayerPortalContact()
+{
+	UFilmStyleSubsystem* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
+	APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+	UPrimitiveComponent* PlayerCollision = Player ? Cast<UPrimitiveComponent>(Player->GetRootComponent()) : nullptr;
+	ACutActor* Cut = Context ? Context->ActiveCutActor.Get() : nullptr;
+	// Portal contact depends on an active destination, not visual selection/mask state.
+	if (!PlayerCollision || !IsValid(Cut))
+	{
+		PlayerPortalStatus = !PlayerCollision ? TEXT("No player collision component") : TEXT("No ActiveCutActor");
+		bHasPreviousPlayerLocation = false;
+		bPlayerWasTouching = false;
+		return;
+	}
+	const FVector Location = PlayerCollision->GetComponentLocation();
+	const FVector Start = bHasPreviousPlayerLocation ? PreviousPlayerLocation : Location;
+	// Character roots provide their scaled capsule; sphere/box pawn roots also work.
+	const FCollisionShape Probe = PlayerCollision->GetCollisionShape(FMath::Max(0.f, PlayerContactMargin));
+	const FQuat ProbeRotation = PlayerCollision->GetComponentQuat();
+	bool bTouching = false;
+	// Include both ChildActorComponents and actors attached in the level hierarchy.
+	// GetComponents(..., true) alone only descends through ChildActorComponents.
+	TArray<AActor*> PendingActors;
+	TSet<AActor*> VisitedActors;
+	PendingActors.Add(this);
+	TArray<UStaticMeshComponent*> Components;
+	while (!PendingActors.IsEmpty())
+	{
+		AActor* Actor = PendingActors.Pop(EAllowShrinking::No);
+		if (!IsValid(Actor) || VisitedActors.Contains(Actor)) continue;
+		VisitedActors.Add(Actor);
+		TInlineComponentArray<UStaticMeshComponent*> ActorMeshes;
+		Actor->GetComponents<UStaticMeshComponent>(ActorMeshes, true);
+		for (UStaticMeshComponent* Mesh : ActorMeshes) Components.AddUnique(Mesh);
+		TArray<AActor*> AttachedActors;
+		Actor->GetAttachedActors(AttachedActors);
+		PendingActors.Append(AttachedActors);
+		TArray<AActor*> ChildActors;
+		Actor->GetAllChildActors(ChildActors, true);
+		PendingActors.Append(ChildActors);
+	}
+	int32 QueryMeshCount = 0;
+	for (UStaticMeshComponent* Component : Components)
+	{
+		if (!IsValid(Component) || Component->IsEditorOnly() || !Component->IsQueryCollisionEnabled()) continue;
+		++QueryMeshCount;
+		FHitResult Hit;
+		// Direct component geometry queries ignore Pawn/Camera channel responses
+		// and do not require GenerateOverlapEvents, so pass-through meshes trigger.
+		if (Component->OverlapComponent(Location, ProbeRotation, Probe)
+			|| Component->SweepComponent(Hit, Start, Location, ProbeRotation, Probe)
+			|| Component->SweepComponent(Hit, Start, Location, ProbeRotation, Probe, true))
+		{
+			bTouching = true;
+			break;
+		}
+	}
+	PreviousPlayerLocation = Location;
+	bHasPreviousPlayerLocation = true;
+	if (bTouching && !bPlayerWasTouching)
+	{
+		if (Cut->TeleportPlayerToCapture())
+		{
+			// Never sweep the teleport displacement on the following frame.
+			PreviousPlayerLocation = PlayerCollision->GetComponentLocation();
+			PlayerPortalStatus = TEXT("Teleported; waiting for player to leave mesh");
+			bPlayerWasTouching = true;
+		}
+		else
+		{
+			PlayerPortalStatus = TEXT("Contact detected, teleport rejected (see Output Log)");
+			// Retry while touching if the destination was not initialized yet.
+			bPlayerWasTouching = false;
+		}
+		return;
+	}
+	if (!bTouching)
+	{
+		PlayerPortalStatus = QueryMeshCount > 0 ? TEXT("Waiting for player contact") : TEXT("No static mesh with query collision");
+	}
+	bPlayerWasTouching = bTouching;
 }
 
 #if WITH_EDITOR

@@ -30,6 +30,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cut")
 	void SetActiveCutActor();
 
+	/** Move the local player's view onto this capture, preserving the pawn/camera rig. */
+	UFUNCTION(BlueprintCallable, Category = "Cut")
+	bool TeleportPlayerToCapture();
+
 	UFUNCTION(BlueprintCallable, Category = "Cut", meta = (WorldContext = "WorldContextObject"))
 	static void ClearActive(const UObject* WorldContextObject);
 

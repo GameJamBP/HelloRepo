@@ -9,6 +9,9 @@
 #include "FilmStyleSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/SpringArmComponent.h"
 
 ACutActor::ACutActor()
 {
@@ -120,6 +123,58 @@ void ACutActor::ClearActive(const UObject* WorldContextObject)
 	UFilmStyleSubsystem* Context = World->GetSubsystem<UFilmStyleSubsystem>();
 	if (IsValid(Context->ActiveCutActor)) Context->ActiveCutActor->SetCaptureActive(false);
 	Context->ActiveCutActor = nullptr;
+}
+
+bool ACutActor::TeleportPlayerToCapture()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!bSnapshotInitialized || !Pawn || !PC->PlayerCameraManager || PC->GetViewTarget() != Pawn)
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("Cut teleport rejected: Initialized=%d Pawn=%s Camera=%s ViewTarget=%s"),
+			bSnapshotInitialized, *GetNameSafe(Pawn), *GetNameSafe(PC ? PC->PlayerCameraManager.Get() : nullptr),
+			*GetNameSafe(PC ? PC->GetViewTarget() : nullptr));
+		return false;
+	}
+	APlayerCameraManager* Camera = PC->PlayerCameraManager;
+	const FVector TargetLocation = CaptureComponent2D->GetComponentLocation();
+	const FQuat TargetRotation = CaptureComponent2D->GetComponentQuat();
+	const FMinimalViewInfo SourceView = Camera->GetCameraCacheView();
+	const FQuat Delta = TargetRotation * SourceView.Rotation.Quaternion().Inverse();
+	const FVector Destination = TargetLocation + Delta.RotateVector(Pawn->GetActorLocation() - SourceView.Location);
+	// Character capsules stay upright; the controller carries camera pitch and roll.
+	const FRotator PawnRotation(0.f, (Delta * Pawn->GetActorQuat()).Rotator().Yaw, 0.f);
+	if (!Pawn->SetActorLocationAndRotation(Destination, PawnRotation, false, nullptr, ETeleportType::TeleportPhysics)) return false;
+	PC->SetControlRotation((Delta * PC->GetControlRotation().Quaternion()).Rotator());
+	// Re-evaluate the rig without lag, then correct the actual view offset. This
+	// accounts for third-person arm length and collision at the destination.
+	TInlineComponentArray<USpringArmComponent*> Arms(Pawn);
+	auto UpdateView = [&]()
+	{
+		for (USpringArmComponent* Arm : Arms)
+		{
+			const bool bLocationLag = Arm->bEnableCameraLag;
+			const bool bRotationLag = Arm->bEnableCameraRotationLag;
+			Arm->bEnableCameraLag = false;
+			Arm->bEnableCameraRotationLag = false;
+			Arm->TickComponent(0.f, LEVELTICK_All, nullptr);
+			Arm->bEnableCameraLag = bLocationLag;
+			Arm->bEnableCameraRotationLag = bRotationLag;
+		}
+		Camera->UpdateCamera(0.f);
+	};
+	UpdateView();
+	for (int32 Iteration = 0; Iteration < 4; ++Iteration)
+	{
+		const FVector Correction = TargetLocation - Camera->GetCameraLocation();
+		if (Correction.IsNearlyZero(0.01f)) break;
+		Pawn->AddActorWorldOffset(Correction, false, nullptr, ETeleportType::TeleportPhysics);
+		UpdateView();
+	}
+	Camera->SetGameCameraCutThisFrame();
+	PreviousPlayerView = FTransform(Camera->GetCameraRotation(), Camera->GetCameraLocation());
+	bHasPreviousPlayerView = true;
+	return true;
 }
 
 void ACutActor::Tick(float DeltaSeconds)
