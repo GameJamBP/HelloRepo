@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "SelectActor.generated.h"
+#include "FilmStylePP.generated.h"
 
 class FSelectOutlineViewExtension;
 class UTexture;
@@ -34,13 +34,13 @@ enum class ESelectFilmMaskMode : uint8
  * Place in a level to enable custom-depth stencil Outline, FilmMask (电影遮罩), and FilmMode (全局电影宽银幕黑边与复古胶片调色) for this world.
  * Automatically activates when bEnable is true.
  */
-UCLASS(Blueprintable, meta = (DisplayName = "Select Actor"))
-class SELECTOUTLINE_API ASelectActor : public AActor
+UCLASS(Blueprintable, meta = (DisplayName = "FilmStylePP"))
+class SELECTOUTLINE_API AFilmStylePP : public AActor
 {
 	GENERATED_BODY()
 
 public:
-	ASelectActor();
+	AFilmStylePP();
 
 	//~ AActor
 	virtual void OnConstruction(const FTransform& Transform) override;
@@ -54,7 +54,7 @@ public:
 #endif
 
 	/** Push current property values to the render-thread view extension. */
-	UFUNCTION(BlueprintCallable, Category = "Select Actor")
+	UFUNCTION(BlueprintCallable, Category = "FilmStylePP")
 	void RefreshOutline();
 
 	/** Enable or disable the Outline pass independently. */
@@ -85,28 +85,28 @@ public:
 	// 1. General & Dither Repair
 	// =================================================================================================================
 
-	/** Master toggle for this SelectActor. When placed in the world and enabled, active features run automatically. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Actor", meta = (DisplayName = "Enable"))
+	/** Master toggle for this FilmStylePP. When placed in the world and enabled, active features run automatically. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmStylePP", meta = (DisplayName = "Enable"))
 	bool bEnable = true;
 
 	/** CustomDepth Stencil value to match (1-255). Enable 'Render CustomDepth Pass' on target meshes and set their stencil to this value. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Actor", meta = (ClampMin = "1", ClampMax = "255"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmStylePP", meta = (ClampMin = "1", ClampMax = "255"))
 	int32 StencilValue = 1;
 
 	/** Enable the neighborhood confidence filter so dithered/masked materials do not spawn false internal outlines or holes. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Actor|Dither Repair")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmStylePP|Dither Repair")
 	bool bDitherRepair = true;
 
 	/** Kernel radius in pixels (r => (2r+1)x(2r+1) window). 2 (= 5x5) handles standard 4x4 dither patterns. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Actor|Dither Repair", meta = (ClampMin = "1", ClampMax = "4", EditCondition = "bDitherRepair"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmStylePP|Dither Repair", meta = (ClampMin = "1", ClampMax = "4", EditCondition = "bDitherRepair"))
 	int32 FilterRadius = 2;
 
 	/** If a non-selected pixel's neighborhood stencil ratio >= FillConfidence and it is surrounded on both axes, fill the dither hole. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Actor|Dither Repair", meta = (ClampMin = "0.05", ClampMax = "1.0", EditCondition = "bDitherRepair"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmStylePP|Dither Repair", meta = (ClampMin = "0.05", ClampMax = "1.0", EditCondition = "bDitherRepair"))
 	float FillConfidence = 0.35f;
 
 	/** If a selected pixel's neighborhood stencil ratio < KeepConfidence, discard it as stray dither noise. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Actor|Dither Repair", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bDitherRepair"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmStylePP|Dither Repair", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bDitherRepair"))
 	float KeepConfidence = 0.15f;
 
 	// =================================================================================================================

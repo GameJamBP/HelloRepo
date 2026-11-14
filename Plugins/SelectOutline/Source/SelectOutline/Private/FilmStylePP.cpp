@@ -1,4 +1,4 @@
-#include "SelectActor.h"
+#include "FilmStylePP.h"
 #include "SelectOutlineViewExtension.h"
 #include "Engine/Engine.h"
 #include "Engine/Texture.h"
@@ -15,7 +15,7 @@ namespace
 	TOptional<bool> GGlobalFilmModeEnabledOverride;
 
 	template <typename FuncType>
-	void ForEachSelectActor(const UObject* WorldContextObject, FuncType&& Func)
+	void ForEachFilmStylePP(const UObject* WorldContextObject, FuncType&& Func)
 	{
 		UWorld* TargetWorld = nullptr;
 		if (WorldContextObject && GEngine)
@@ -25,9 +25,9 @@ namespace
 
 		if (TargetWorld)
 		{
-			for (TActorIterator<ASelectActor> It(TargetWorld); It; ++It)
+			for (TActorIterator<AFilmStylePP> It(TargetWorld); It; ++It)
 			{
-				if (ASelectActor* Actor = *It)
+				if (AFilmStylePP* Actor = *It)
 				{
 					Func(Actor);
 				}
@@ -35,9 +35,9 @@ namespace
 			return;
 		}
 
-		for (TObjectIterator<ASelectActor> It; It; ++It)
+		for (TObjectIterator<AFilmStylePP> It; It; ++It)
 		{
-			ASelectActor* Actor = *It;
+			AFilmStylePP* Actor = *It;
 			if (IsValid(Actor) && !Actor->HasAnyFlags(RF_ClassDefaultObject) && Actor->GetWorld())
 			{
 				Func(Actor);
@@ -46,7 +46,7 @@ namespace
 	}
 }
 
-ASelectActor::ASelectActor()
+AFilmStylePP::AFilmStylePP()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
@@ -54,13 +54,13 @@ ASelectActor::ASelectActor()
 	SetCanBeDamaged(false);
 }
 
-void ASelectActor::OnConstruction(const FTransform& Transform)
+void AFilmStylePP::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	RefreshOutline();
 }
 
-void ASelectActor::BeginPlay()
+void AFilmStylePP::BeginPlay()
 {
 	Super::BeginPlay();
 	if (GGlobalOutlineEnabledOverride.IsSet())
@@ -82,19 +82,19 @@ void ASelectActor::BeginPlay()
 	RefreshOutline();
 }
 
-void ASelectActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void AFilmStylePP::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ReleaseExtension();
 	Super::EndPlay(EndPlayReason);
 }
 
-void ASelectActor::Destroyed()
+void AFilmStylePP::Destroyed()
 {
 	ReleaseExtension();
 	Super::Destroyed();
 }
 
-void ASelectActor::Tick(float DeltaSeconds)
+void AFilmStylePP::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
@@ -106,7 +106,7 @@ void ASelectActor::Tick(float DeltaSeconds)
 }
 
 #if WITH_EDITOR
-void ASelectActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+void AFilmStylePP::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	GGlobalOutlineEnabledOverride.Reset();
@@ -117,25 +117,25 @@ void ASelectActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
 }
 #endif
 
-void ASelectActor::SetOutlineEnabled(bool bInEnabled)
+void AFilmStylePP::SetOutlineEnabled(bool bInEnabled)
 {
 	bEnableOutline = bInEnabled;
 	RefreshOutline();
 }
 
-void ASelectActor::SetFilmMaskEnabled(bool bInEnabled)
+void AFilmStylePP::SetFilmMaskEnabled(bool bInEnabled)
 {
 	bEnableFilmMask = bInEnabled;
 	RefreshOutline();
 }
 
-void ASelectActor::SetFilmMaskMode(ESelectFilmMaskMode NewMode)
+void AFilmStylePP::SetFilmMaskMode(ESelectFilmMaskMode NewMode)
 {
 	FilmMaskMode = NewMode;
 	RefreshOutline();
 }
 
-void ASelectActor::SetReplaceTexture(UTexture* InTexture, bool bEnableReplacement)
+void AFilmStylePP::SetReplaceTexture(UTexture* InTexture, bool bEnableReplacement)
 {
 	ReplaceTexture = InTexture;
 	if (bEnableReplacement && InTexture != nullptr)
@@ -150,20 +150,20 @@ void ASelectActor::SetReplaceTexture(UTexture* InTexture, bool bEnableReplacemen
 	RefreshOutline();
 }
 
-void ASelectActor::SetFilmModeEnabled(bool bInEnabled)
+void AFilmStylePP::SetFilmModeEnabled(bool bInEnabled)
 {
 	bEnableFilmMode = bInEnabled;
 	RefreshOutline();
 }
 
-void ASelectActor::SetFilmModeAmounts(float InBlackBarAmount, float InGradingAmount)
+void AFilmStylePP::SetFilmModeAmounts(float InBlackBarAmount, float InGradingAmount)
 {
 	FilmBlackBarAmount = FMath::Clamp(InBlackBarAmount, 0.f, 1.f);
 	FilmGradingAmount = FMath::Clamp(InGradingAmount, 0.f, 1.f);
 	RefreshOutline();
 }
 
-void ASelectActor::EnsureExtension()
+void AFilmStylePP::EnsureExtension()
 {
 	if (!ViewExtension.IsValid())
 	{
@@ -175,7 +175,7 @@ void ASelectActor::EnsureExtension()
 	}
 }
 
-void ASelectActor::ReleaseExtension()
+void AFilmStylePP::ReleaseExtension()
 {
 	if (ViewExtension.IsValid())
 	{
@@ -184,7 +184,7 @@ void ASelectActor::ReleaseExtension()
 	}
 }
 
-void ASelectActor::RefreshOutline()
+void AFilmStylePP::RefreshOutline()
 {
 	if (HasAnyFlags(RF_ClassDefaultObject) || !GetWorld())
 	{
@@ -272,7 +272,7 @@ void ASelectActor::RefreshOutline()
 void USelectOutlineBlueprintLibrary::SetSelectOutlineEnabled(const UObject* WorldContextObject, bool bEnabled)
 {
 	GGlobalOutlineEnabledOverride = bEnabled;
-	ForEachSelectActor(WorldContextObject, [bEnabled](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [bEnabled](AFilmStylePP* Actor)
 	{
 		Actor->SetOutlineEnabled(bEnabled);
 	});
@@ -281,7 +281,7 @@ void USelectOutlineBlueprintLibrary::SetSelectOutlineEnabled(const UObject* Worl
 bool USelectOutlineBlueprintLibrary::IsSelectOutlineEnabled(const UObject* WorldContextObject)
 {
 	bool bResult = GGlobalOutlineEnabledOverride.Get(true);
-	ForEachSelectActor(WorldContextObject, [&bResult](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [&bResult](AFilmStylePP* Actor)
 	{
 		bResult = Actor->bEnableOutline;
 	});
@@ -291,7 +291,7 @@ bool USelectOutlineBlueprintLibrary::IsSelectOutlineEnabled(const UObject* World
 void USelectOutlineBlueprintLibrary::SetFilmMaskEnabled(const UObject* WorldContextObject, bool bEnabled)
 {
 	GGlobalFilmMaskEnabledOverride = bEnabled;
-	ForEachSelectActor(WorldContextObject, [bEnabled](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [bEnabled](AFilmStylePP* Actor)
 	{
 		Actor->SetFilmMaskEnabled(bEnabled);
 	});
@@ -300,7 +300,7 @@ void USelectOutlineBlueprintLibrary::SetFilmMaskEnabled(const UObject* WorldCont
 bool USelectOutlineBlueprintLibrary::IsFilmMaskEnabled(const UObject* WorldContextObject)
 {
 	bool bResult = GGlobalFilmMaskEnabledOverride.Get(false);
-	ForEachSelectActor(WorldContextObject, [&bResult](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [&bResult](AFilmStylePP* Actor)
 	{
 		bResult = Actor->bEnableFilmMask;
 	});
@@ -314,7 +314,7 @@ void USelectOutlineBlueprintLibrary::SetFilmMaskMode(const UObject* WorldContext
 	{
 		GGlobalFilmMaskEnabledOverride = (NewMode != ESelectFilmMaskMode::None);
 	}
-	ForEachSelectActor(WorldContextObject, [NewMode, bEnableFilmMask](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [NewMode, bEnableFilmMask](AFilmStylePP* Actor)
 	{
 		Actor->FilmMaskMode = NewMode;
 		if (bEnableFilmMask)
@@ -328,7 +328,7 @@ void USelectOutlineBlueprintLibrary::SetFilmMaskMode(const UObject* WorldContext
 ESelectFilmMaskMode USelectOutlineBlueprintLibrary::GetFilmMaskMode(const UObject* WorldContextObject)
 {
 	ESelectFilmMaskMode Result = GGlobalFilmMaskModeOverride.Get(ESelectFilmMaskMode::None);
-	ForEachSelectActor(WorldContextObject, [&Result](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [&Result](AFilmStylePP* Actor)
 	{
 		Result = Actor->FilmMaskMode;
 	});
@@ -342,7 +342,7 @@ void USelectOutlineBlueprintLibrary::SetFilmMaskSolidColor(const UObject* WorldC
 		GGlobalFilmMaskEnabledOverride = true;
 		GGlobalFilmMaskModeOverride = ESelectFilmMaskMode::SolidColor;
 	}
-	ForEachSelectActor(WorldContextObject, [NewColor, bActivateMode](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [NewColor, bActivateMode](AFilmStylePP* Actor)
 	{
 		Actor->SolidColor = NewColor;
 		if (bActivateMode)
@@ -361,7 +361,7 @@ void USelectOutlineBlueprintLibrary::SetFilmMaskCheckerboard(const UObject* Worl
 		GGlobalFilmMaskEnabledOverride = true;
 		GGlobalFilmMaskModeOverride = ESelectFilmMaskMode::Checkerboard;
 	}
-	ForEachSelectActor(WorldContextObject, [ColorA, ColorB, CheckerSize, bActivateMode](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [ColorA, ColorB, CheckerSize, bActivateMode](AFilmStylePP* Actor)
 	{
 		Actor->CheckerColorA = ColorA;
 		Actor->CheckerColorB = ColorB;
@@ -382,7 +382,7 @@ void USelectOutlineBlueprintLibrary::SetFilmMaskRenderTarget(const UObject* Worl
 		GGlobalFilmMaskEnabledOverride = true;
 		GGlobalFilmMaskModeOverride = ESelectFilmMaskMode::RenderTarget;
 	}
-	ForEachSelectActor(WorldContextObject, [InTexture, bActivateMode](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [InTexture, bActivateMode](AFilmStylePP* Actor)
 	{
 		Actor->SetReplaceTexture(InTexture, bActivateMode);
 	});
@@ -391,7 +391,7 @@ void USelectOutlineBlueprintLibrary::SetFilmMaskRenderTarget(const UObject* Worl
 void USelectOutlineBlueprintLibrary::SetFilmModeEnabled(const UObject* WorldContextObject, bool bEnabled)
 {
 	GGlobalFilmModeEnabledOverride = bEnabled;
-	ForEachSelectActor(WorldContextObject, [bEnabled](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [bEnabled](AFilmStylePP* Actor)
 	{
 		Actor->SetFilmModeEnabled(bEnabled);
 	});
@@ -400,7 +400,7 @@ void USelectOutlineBlueprintLibrary::SetFilmModeEnabled(const UObject* WorldCont
 bool USelectOutlineBlueprintLibrary::IsFilmModeEnabled(const UObject* WorldContextObject)
 {
 	bool bResult = GGlobalFilmModeEnabledOverride.Get(false);
-	ForEachSelectActor(WorldContextObject, [&bResult](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [&bResult](AFilmStylePP* Actor)
 	{
 		bResult = Actor->bEnableFilmMode;
 	});
@@ -410,7 +410,7 @@ bool USelectOutlineBlueprintLibrary::IsFilmModeEnabled(const UObject* WorldConte
 void USelectOutlineBlueprintLibrary::SetFilmModeParameters(const UObject* WorldContextObject, float BlackBarAmount, float GradingAmount, float AspectRatio, bool bEnableFilmMode)
 {
 	GGlobalFilmModeEnabledOverride = bEnableFilmMode;
-	ForEachSelectActor(WorldContextObject, [BlackBarAmount, GradingAmount, AspectRatio, bEnableFilmMode](ASelectActor* Actor)
+	ForEachFilmStylePP(WorldContextObject, [BlackBarAmount, GradingAmount, AspectRatio, bEnableFilmMode](AFilmStylePP* Actor)
 	{
 		Actor->bEnableFilmMode = bEnableFilmMode;
 		Actor->FilmBlackBarAmount = FMath::Clamp(BlackBarAmount, 0.f, 1.f);

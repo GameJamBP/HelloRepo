@@ -192,7 +192,10 @@ FScreenPassTexture FSelectOutlineViewExtension::PostProcess_RenderThread(FRDGBui
 		&& View.ViewUniformBuffer.IsValid();
 
 	const float Thickness = (S.bEnableOutline && bHasValidCustomDepth) ? FMath::Clamp(S.Thickness, 0.f, SelectOutline::MaxThickness) : 0.f;
-	const int32 RequestedFilmMaskMode = (S.bEnableFilmMask && bHasValidCustomDepth) ? FMath::Clamp(S.FilmMaskMode, 0, 4) : 0;
+	// Never sample the replacement RT while a scene capture may be writing it.
+	// Preserve outline and grading; RT compositing belongs to the player view.
+	const bool bCaptureRTFeedback = View.bIsSceneCapture && S.FilmMaskMode == 1;
+	const int32 RequestedFilmMaskMode = (S.bEnableFilmMask && bHasValidCustomDepth && !bCaptureRTFeedback) ? FMath::Clamp(S.FilmMaskMode, 0, 4) : 0;
 	const bool bRunFilmMode = S.bEnableFilmMode && (S.FilmBlackBarAmount > 0.f || S.FilmGradingAmount > 0.f);
 
 	const bool bCanRun = S.bEnable

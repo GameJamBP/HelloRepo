@@ -18,7 +18,8 @@ public class HelloRepo : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
+			"Slate",
+			"SelectOutline"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

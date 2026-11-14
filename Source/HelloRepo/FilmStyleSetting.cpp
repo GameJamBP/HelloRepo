@@ -1,0 +1,212 @@
+#include "FilmStyleSetting.h"
+#include "FilmStyleSubsystem.h"
+#include "CutActor.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Engine/World.h"
+
+AFilmStyleSetting::AFilmStyleSetting()
+{
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = true;
+	PrimaryActorTick.TickGroup = TG_PrePhysics;
+}
+
+void AFilmStyleSetting::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	SyncStateToSubsystem();
+}
+
+void AFilmStyleSetting::BeginPlay()
+{
+	Super::BeginPlay();
+
+	bWasSubsystemFilmMode = false;
+	bIsFadingOutFilmMode = false;
+	FilmModeElapsedTime = 0.0f;
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+		{
+			UpdateFilmModeTransition(0.0f, Subsystem->bFilmMode);
+		}
+	}
+
+	SyncStateToSubsystem();
+}
+
+void AFilmStyleSetting::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+		{
+			Subsystem->SelectActorData = FSelectActorStateData{};
+		}
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AFilmStyleSetting::Destroyed()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+		{
+			Subsystem->SelectActorData = FSelectActorStateData{};
+		}
+	}
+
+	Super::Destroyed();
+}
+
+void AFilmStyleSetting::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	UWorld* World = GetWorld();
+	if (!World || HasAnyFlags(RF_ClassDefaultObject))
+	{
+		return;
+	}
+
+	if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+	{
+		ACutActor* ActiveCutActor = IsValid(Subsystem->ActiveCutActor) ? Subsystem->ActiveCutActor.Get() : nullptr;
+		UTextureRenderTarget2D* ActiveRenderTarget = ActiveCutActor ? ActiveCutActor->RenderTarget.Get() : nullptr;
+		const TWeakObjectPtr<ACutActor> CurrentActor(ActiveCutActor);
+		const TWeakObjectPtr<UTextureRenderTarget2D> CurrentRenderTarget(ActiveRenderTarget);
+		// Also detect delayed RT creation after activation and replacement of the RT object.
+		if (LastActiveCutActor != CurrentActor || LastActiveCutRenderTarget != CurrentRenderTarget)
+		{
+			LastActiveCutActor = CurrentActor;
+			LastActiveCutRenderTarget = CurrentRenderTarget;
+			ReplaceTexture = ActiveRenderTarget;
+			RefreshOutline();
+		}
+
+		if (World->IsGameWorld() || Subsystem->bFilmMode || bWasSubsystemFilmMode || bIsFadingOutFilmMode)
+		{
+			UpdateFilmModeTransition(DeltaSeconds, Subsystem->bFilmMode);
+		}
+
+		SyncStateToSubsystem();
+	}
+}
+
+#if WITH_EDITOR
+void AFilmStyleSetting::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	SyncStateToSubsystem();
+}
+#endif
+
+float AFilmStyleSetting::ComputeTransitionAlpha(float ElapsedTime, const FVector2D& TimingVec)
+{
+	const float Delay = FMath::Max(0.0f, static_cast<float>(TimingVec.X));
+	const float Duration = FMath::Max(0.0f, static_cast<float>(TimingVec.Y));
+
+	if (ElapsedTime < Delay)
+	{
+		return 0.0f;
+	}
+
+	if (Duration <= KINDA_SMALL_NUMBER)
+	{
+		return 1.0f;
+	}
+
+	return FMath::Clamp((ElapsedTime - Delay) / Duration, 0.0f, 1.0f);
+}
+
+void AFilmStyleSetting::UpdateFilmModeTransition(float DeltaSeconds, bool bSubsystemFilmMode)
+{
+	if (bSubsystemFilmMode)
+	{
+		if (!bWasSubsystemFilmMode)
+		{
+			bWasSubsystemFilmMode = true;
+			bIsFadingOutFilmMode = false;
+			FilmModeElapsedTime = 0.0f;
+		}
+		else
+		{
+			FilmModeElapsedTime += FMath::Max(0.0f, DeltaSeconds);
+		}
+
+		bEnableFilmMode = true;
+		FilmBlackBarAmount = ComputeTransitionAlpha(FilmModeElapsedTime, AB);
+		FilmGradingAmount = ComputeTransitionAlpha(FilmModeElapsedTime, CD);
+		RefreshOutline();
+	}
+	else
+	{
+		if (bWasSubsystemFilmMode)
+		{
+			// Just transitioned from bFilmMode = true -> false: start EF / GH fade-out
+			bWasSubsystemFilmMode = false;
+			bIsFadingOutFilmMode = true;
+			FilmModeElapsedTime = 0.0f;
+			FadeOutStartBlackBarAmount = 1.0f;
+			FadeOutStartGradingAmount = 1.0f;
+		}
+		else if (bIsFadingOutFilmMode)
+		{
+			FilmModeElapsedTime += FMath::Max(0.0f, DeltaSeconds);
+		}
+
+		if (bIsFadingOutFilmMode)
+		{
+			const float BlackBarOutAlpha = ComputeTransitionAlpha(FilmModeElapsedTime, EF);
+			const float GradingOutAlpha = ComputeTransitionAlpha(FilmModeElapsedTime, GH);
+
+			FilmBlackBarAmount = FadeOutStartBlackBarAmount * (1.0f - BlackBarOutAlpha);
+			FilmGradingAmount = FadeOutStartGradingAmount * (1.0f - GradingOutAlpha);
+
+			if (BlackBarOutAlpha >= 1.0f && GradingOutAlpha >= 1.0f)
+			{
+				bIsFadingOutFilmMode = false;
+				bEnableFilmMode = false;
+				FilmBlackBarAmount = 0.0f;
+				FilmGradingAmount = 0.0f;
+			}
+			else
+			{
+				bEnableFilmMode = true;
+			}
+
+			RefreshOutline();
+		}
+	}
+}
+
+void AFilmStyleSetting::SyncStateToSubsystem()
+{
+	UWorld* World = GetWorld();
+	if (!World || HasAnyFlags(RF_ClassDefaultObject))
+	{
+		return;
+	}
+
+	UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>();
+	if (!Subsystem)
+	{
+		return;
+	}
+
+	FSelectActorStateData Data;
+	Data.bHasValidSelectActor = true;
+	Data.bEnable = bEnable;
+	Data.StencilValue = StencilValue;
+	Data.bEnableOutline = bEnableOutline;
+	Data.bEnableFilmMask = bEnableFilmMask;
+	Data.FilmMaskMode = FilmMaskMode;
+	Data.bEnableFilmMode = bEnableFilmMode;
+	Data.FilmBlackBarAmount = FilmBlackBarAmount;
+	Data.FilmGradingAmount = FilmGradingAmount;
+
+	Subsystem->SelectActorData = Data;
+}
