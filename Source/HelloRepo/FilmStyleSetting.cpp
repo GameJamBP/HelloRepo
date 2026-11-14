@@ -24,6 +24,7 @@ void AFilmStyleSetting::BeginPlay()
 	bWasSubsystemFilmMode = false;
 	bIsFadingOutFilmMode = false;
 	FilmModeElapsedTime = 0.0f;
+	RefreshActiveCutTexture();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -74,18 +75,7 @@ void AFilmStyleSetting::Tick(float DeltaSeconds)
 
 	if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
 	{
-		ACutActor* ActiveCutActor = IsValid(Subsystem->ActiveCutActor) ? Subsystem->ActiveCutActor.Get() : nullptr;
-		UTextureRenderTarget2D* ActiveRenderTarget = ActiveCutActor ? ActiveCutActor->RenderTarget.Get() : nullptr;
-		const TWeakObjectPtr<ACutActor> CurrentActor(ActiveCutActor);
-		const TWeakObjectPtr<UTextureRenderTarget2D> CurrentRenderTarget(ActiveRenderTarget);
-		// Also detect delayed RT creation after activation and replacement of the RT object.
-		if (LastActiveCutActor != CurrentActor || LastActiveCutRenderTarget != CurrentRenderTarget)
-		{
-			LastActiveCutActor = CurrentActor;
-			LastActiveCutRenderTarget = CurrentRenderTarget;
-			ReplaceTexture = ActiveRenderTarget;
-			RefreshOutline();
-		}
+		RefreshActiveCutTexture();
 
 		if (World->IsGameWorld() || Subsystem->bFilmMode || bWasSubsystemFilmMode || bIsFadingOutFilmMode)
 		{
@@ -209,4 +199,71 @@ void AFilmStyleSetting::SyncStateToSubsystem()
 	Data.FilmGradingAmount = FilmGradingAmount;
 
 	Subsystem->SelectActorData = Data;
+}
+
+void AFilmStyleSetting::RefreshActiveCutTexture()
+{
+	UWorld* World = GetWorld();
+	if (!World || HasAnyFlags(RF_ClassDefaultObject)) return;
+	if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+	{
+		ACutActor* ActiveCutActor = IsValid(Subsystem->ActiveCutActor) ? Subsystem->ActiveCutActor.Get() : nullptr;
+		UTextureRenderTarget2D* ActiveRenderTarget = ActiveCutActor ? ActiveCutActor->RenderTarget.Get() : nullptr;
+		const TWeakObjectPtr<ACutActor> CurrentActor(ActiveCutActor);
+		const TWeakObjectPtr<UTextureRenderTarget2D> CurrentRenderTarget(ActiveRenderTarget);
+		bool bMaskChanged = false;
+		// Also detect delayed RT creation after activation and replacement of the RT object.
+		if (LastActiveCutActor != CurrentActor || LastActiveCutRenderTarget != CurrentRenderTarget)
+		{
+			LastActiveCutActor = CurrentActor;
+			LastActiveCutRenderTarget = CurrentRenderTarget;
+			ReplaceTexture = ActiveRenderTarget;
+			bMaskChanged = true;
+		}
+
+		// Evaluate every tick: the active actor's RT may become ready later,
+		// or Blueprint may change the mask mode without changing the actor.
+		if (FilmMaskMode == ESelectFilmMaskMode::SolidColor && IsValid(ActiveRenderTarget))
+		{
+			ReplaceTexture = ActiveRenderTarget;
+			FilmMaskMode = ESelectFilmMaskMode::RenderTarget;
+			bMaskChanged = true;
+		}
+		else if (FilmMaskMode == ESelectFilmMaskMode::RenderTarget && !IsValid(ReplaceTexture.Get()))
+		{
+			FilmMaskMode = ESelectFilmMaskMode::SolidColor;
+			bMaskChanged = true;
+		}
+
+		if (bMaskChanged)
+		{
+			RefreshOutline();
+		}
+
+		SyncStateToSubsystem();
+	}
+}
+
+void AFilmStyleSetting::SetSelectionPressed(bool bPressed)
+{
+	if (bSelectionPressed == bPressed)
+	{
+		return;
+	}
+	bSelectionPressed = bPressed;
+	if (bPressed)
+	{
+		ReleasedOutlineColor = OutlineColor;
+		ReleasedHoverColor = HoverOutlineColor;
+		OutlineColor = ReleasedOutlineColor * FMath::Max(0.f, PressedBrightness);
+		HoverOutlineColor = ReleasedHoverColor * FMath::Max(0.f, PressedBrightness);
+		OutlineColor.A = ReleasedOutlineColor.A;
+		HoverOutlineColor.A = ReleasedHoverColor.A;
+	}
+	else
+	{
+		OutlineColor = ReleasedOutlineColor;
+		HoverOutlineColor = ReleasedHoverColor;
+	}
+	RefreshOutline();
 }

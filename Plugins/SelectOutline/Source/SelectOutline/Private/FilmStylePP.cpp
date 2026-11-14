@@ -177,6 +177,12 @@ void AFilmStylePP::EnsureExtension()
 
 void AFilmStylePP::ReleaseExtension()
 {
+	if (HoverViewExtension.IsValid())
+	{
+		HoverViewExtension->SetSettings(FSelectOutlineSettings{});
+		HoverViewExtension.Reset();
+	}
+
 	if (ViewExtension.IsValid())
 	{
 		ViewExtension->SetSettings(FSelectOutlineSettings{});
@@ -194,7 +200,7 @@ void AFilmStylePP::RefreshOutline()
 	const bool bHasOutline = bEnableOutline && (Thickness > 0.f);
 	const bool bHasFilmMask = bEnableFilmMask && (FilmMaskMode != ESelectFilmMaskMode::None) && (FilmMaskOpacity > 0.f);
 	const bool bHasFilmMode = bEnableFilmMode && (FilmBlackBarAmount > 0.f || FilmGradingAmount > 0.f);
-	if (!bEnable || (!bHasOutline && !bHasFilmMask && !bHasFilmMode))
+	if (!bEnable || (!bHasOutline && !bHasFilmMask && !bHasFilmMode && !(HoverbEnableOutline && HoverThickness > 0.f)))
 	{
 		ReleaseExtension();
 		return;
@@ -263,6 +269,28 @@ void AFilmStylePP::RefreshOutline()
 	S.FilmVignette = FMath::Clamp(FilmVignette, 0.f, 1.f);
 
 	ViewExtension->SetSettings(S);
+
+	if (!HoverViewExtension.IsValid())
+	{
+		HoverViewExtension = FSceneViewExtensions::NewExtension<FSelectOutlineViewExtension>(GetWorld());
+	}
+	FSelectOutlineSettings H;
+	H.bEnable = bEnable && HoverbEnableOutline;
+	H.StencilValue = FMath::Clamp(HoverStencilValue, 1, 255);
+	H.bEnableOutline = HoverbEnableOutline;
+	H.Thickness = HoverThickness;
+	H.OutlineColor = HoverOutlineColor;
+	H.bStripes = HoverbStripes;
+	H.StripeWidth = HoverStripeWidth;
+	H.StripeGap = HoverStripeGap;
+	H.GapColor = HoverGapColor;
+	H.FlowSpeed = HoverFlowSpeed;
+	H.bCompensateCameraRotation = HoverbCompensateCameraRotation;
+	H.bDitherRepair = bDitherRepair;
+	H.FilterRadius = FilterRadius;
+	H.FillConfidence = FillConfidence;
+	H.KeepConfidence = KeepConfidence;
+	HoverViewExtension->SetSettings(H);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

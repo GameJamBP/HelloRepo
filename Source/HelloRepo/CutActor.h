@@ -27,10 +27,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cut")
 	bool bMirrorWorld = false;
 
+	/** Delay after a successful teleport before clearing cuts, selection and mask state. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cut", meta = (ClampMin = "0.0", Units = "s"))
+	float CleanupDelay = 2.0f;
+
 	UFUNCTION(BlueprintCallable, Category = "Cut")
 	void SetActiveCutActor();
 
-	/** Move the local player's view onto this capture, preserving the pawn/camera rig. */
+	/** Move the local player's view onto this capture. Requires Subsystem.bFilmMode. */
 	UFUNCTION(BlueprintCallable, Category = "Cut")
 	bool TeleportPlayerToCapture();
 
@@ -42,6 +46,7 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	void CleanupAfterTeleport();
 	void SetCaptureActive(bool bActive);
 	bool UpdateRenderTarget();
 	void InitializeSnapshot();
@@ -50,4 +55,5 @@ private:
 	bool bHasPreviousPlayerView = false;
 	bool bSnapshotInitialized = false;
 	FTimerHandle InitializationTimer;
+	FTimerHandle CleanupTimer;
 };

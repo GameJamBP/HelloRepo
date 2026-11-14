@@ -65,11 +65,28 @@ void ASelectableActorShell::Tick(float DeltaTime)
 
 void ASelectableActorShell::CheckPlayerPortalContact()
 {
+	if (!bIsSelected)
+	{
+		PlayerPortalStatus = TEXT("Teleport disabled: Actor is not selected");
+		// Discard contact and movement history while this shell is not selected.
+		bHasPreviousPlayerLocation = false;
+		bPlayerWasTouching = false;
+		return;
+	}
+
 	UFilmStyleSubsystem* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
+	if (!Context || !Context->bFilmMode)
+	{
+		PlayerPortalStatus = TEXT("Teleport disabled: FilmMode is off");
+		// Do not sweep movement accumulated while teleporting was disabled.
+		bHasPreviousPlayerLocation = false;
+		bPlayerWasTouching = false;
+		return;
+	}
 	APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
 	UPrimitiveComponent* PlayerCollision = Player ? Cast<UPrimitiveComponent>(Player->GetRootComponent()) : nullptr;
 	ACutActor* Cut = Context ? Context->ActiveCutActor.Get() : nullptr;
-	// Portal contact depends on an active destination, not visual selection/mask state.
+	// Selection, FilmMode and an active destination are required; visual mask state is independent.
 	if (!PlayerCollision || !IsValid(Cut))
 	{
 		PlayerPortalStatus = !PlayerCollision ? TEXT("No player collision component") : TEXT("No ActiveCutActor");
@@ -190,10 +207,10 @@ void ASelectableActorShell::UpdateSelectionState()
 			continue;
 		}
 
-		if (bIsSelected)
+		if (bIsSelected || bTemporarilyActive)
 		{
 			Comp->SetRenderCustomDepth(true);
-			Comp->SetCustomDepthStencilValue(ClampedStencil);
+			Comp->SetCustomDepthStencilValue(bIsSelected ? ClampedStencil : FMath::Clamp(HoverStencilValue, 1, 255));
 		}
 		else
 		{

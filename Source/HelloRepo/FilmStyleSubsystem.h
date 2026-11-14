@@ -6,11 +6,12 @@
 #include "FilmStyleSubsystem.generated.h"
 
 class ACutActor;
+class ASelectableActorShell;
 
 /**
- * Snapshot of SelectActor state stored inside USelectActorSubsystem.
- * Written by ASubsystemSelectActor and read by ASelectableActorShell on Tick.
- */
+	* Snapshot of SelectActor state stored inside USelectActorSubsystem.
+	* Written by ASubsystemSelectActor and read by ASelectableActorShell on Tick.
+	*/
 USTRUCT(BlueprintType)
 struct HELLOREPO_API FSelectActorStateData
 {
@@ -72,9 +73,9 @@ struct HELLOREPO_API FSelectActorStateData
 };
 
 /**
- * World Subsystem that pure-stores shared state between ASubsystemSelectActor and ASelectableActorShell.
- * Does not hold direct actor logic; ASubsystemSelectActor and ASelectableActorShell read/write data here.
- */
+	* World Subsystem that pure-stores shared state between ASubsystemSelectActor and ASelectableActorShell.
+	* Does not hold direct actor logic; ASubsystemSelectActor and ASelectableActorShell read/write data here.
+	*/
 UCLASS(DisplayName = "Select Actor Subsystem")
 class HELLOREPO_API UFilmStyleSubsystem : public UWorldSubsystem
 {
@@ -87,6 +88,11 @@ public:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Cut")
 	TObjectPtr<ACutActor> ActiveCutActor;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Selection")
+	TWeakObjectPtr<ASelectableActorShell> TemporaryActiveActor;
+
+	void SetTemporaryActiveActor(ASelectableActorShell* Actor);
 
 	/** Struct holding the current SelectActor state written by ASubsystemSelectActor. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Subsystem")

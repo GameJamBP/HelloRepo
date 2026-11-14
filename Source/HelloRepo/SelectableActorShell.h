@@ -9,13 +9,13 @@ class UPrimitiveComponent;
 class USceneComponent;
 
 /**
- * Actor shell (Actor壳子) with:
- * - Selection state (bIsSelected: Selected / Unselected), manually updated via UpdateSelectionState() / SetActorSelected()
- * - SelectActor recording state (bIsSelectActorRecording: Recording / Not Recording, synced from USelectActorSubsystem::bFilmMode)
- * - Reads FSelectActorStateData from USelectActorSubsystem on Tick:
- *   1) When Selected + SelectActor is in Checkerboard or RenderTarget state -> all collisions ignore Pawn so the player can pass through freely.
- *   2) When Selected + bFilmMode is true + SelectActor is in Checkerboard state -> all renderable components become render-invisible.
- */
+	* Actor shell (Actor壳子) with:
+	* - Selection state (bIsSelected: Selected / Unselected), manually updated via UpdateSelectionState() / SetActorSelected()
+	* - SelectActor recording state (bIsSelectActorRecording: Recording / Not Recording, synced from USelectActorSubsystem::bFilmMode)
+	* - Reads FSelectActorStateData from USelectActorSubsystem on Tick:
+	*   1) When Selected + SelectActor is in Checkerboard or RenderTarget state -> all collisions ignore Pawn so the player can pass through freely.
+	*   2) When Selected + bFilmMode is true + SelectActor is in Checkerboard state -> all renderable components become render-invisible.
+	*/
 UCLASS(Blueprintable, meta = (DisplayName = "Selectable Actor Shell"))
 class HELLOREPO_API ASelectableActorShell : public AActor
 {
@@ -88,6 +88,18 @@ public:
 	/** Returns whether SelectActor is currently in recording mode (Subsystem.bFilmMode == true). */
 	UFUNCTION(BlueprintPure, Category = "Select Shell")
 	bool IsSelectActorRecording() const { return bIsSelectActorRecording; }
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Shell|Hover", meta = (ClampMin = "1", ClampMax = "255"))
+	int32 HoverStencilValue = 2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Select Shell|Hover")
+	bool bTemporarilyActive = false;
+
+	void SetTemporarilyActive(bool bActive)
+	{
+		bTemporarilyActive = bActive;
+		UpdateSelectionState();
+	}
 
 private:
 	void CheckPlayerPortalContact();

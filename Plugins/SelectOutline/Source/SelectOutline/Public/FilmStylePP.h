@@ -9,8 +9,8 @@ class FSelectOutlineViewExtension;
 class UTexture;
 
 /**
- * 5 display modes for FilmMask (电影遮罩) on the unoccluded custom-depth stencil region.
- */
+	* 5 display modes for FilmMask (电影遮罩) on the unoccluded custom-depth stencil region.
+	*/
 UENUM(BlueprintType)
 enum class ESelectFilmMaskMode : uint8
 {
@@ -31,9 +31,9 @@ enum class ESelectFilmMaskMode : uint8
 };
 
 /**
- * Place in a level to enable custom-depth stencil Outline, FilmMask (电影遮罩), and FilmMode (全局电影宽银幕黑边与复古胶片调色) for this world.
- * Automatically activates when bEnable is true.
- */
+	* Place in a level to enable custom-depth stencil Outline, FilmMask (电影遮罩), and FilmMode (全局电影宽银幕黑边与复古胶片调色) for this world.
+	* Automatically activates when bEnable is true.
+	*/
 UCLASS(Blueprintable, meta = (DisplayName = "FilmStylePP"))
 class SELECTOUTLINE_API AFilmStylePP : public AActor
 {
@@ -269,7 +269,47 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmMode|Film Grading Preset", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bEnableFilmMode"))
 	float FilmVignette = 0.25f;
 
+	/** Independent toggle for the selection outline. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline", meta = (DisplayName = "Enable Outline"))
+	bool HoverbEnableOutline = true;
+
+	/** Outline width in output pixels. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline", meta = (ClampMin = "0.5", ClampMax = "32.0", EditCondition = "HoverbEnableOutline"))
+	float HoverThickness = 3.0f;
+
+	/** Primary outline color (RGBA). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline", meta = (EditCondition = "HoverbEnableOutline"))
+	FLinearColor HoverOutlineColor = FLinearColor(1.0f, 0.6f, 0.0f, 1.0f);
+
+	/** Enable diagonal marching stripes along the outline. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline|Stripes", meta = (EditCondition = "HoverbEnableOutline"))
+	bool HoverbStripes = true;
+
+	/** Width of each solid stripe segment (in screen pixels). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline|Stripes", meta = (ClampMin = "1.0", ClampMax = "128.0", EditCondition = "HoverbEnableOutline && HoverbStripes"))
+	float HoverStripeWidth = 8.0f;
+
+	/** Width of the gap between stripes (in screen pixels). Set to 0 for a solid line. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline|Stripes", meta = (ClampMin = "0.0", ClampMax = "128.0", EditCondition = "HoverbEnableOutline && HoverbStripes"))
+	float HoverStripeGap = 8.0f;
+
+	/** Color inside the gap between stripes (Alpha = 0 leaves the scene background visible, producing a dashed line). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline|Stripes", meta = (EditCondition = "HoverbEnableOutline && HoverbStripes"))
+	FLinearColor HoverGapColor = FLinearColor(0.0f, 0.0f, 0.0f, 0.0f);
+
+	/** Stripe flow speed in pixels per second (positive and negative values flow in opposite directions; 0 = static). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline|Stripes", meta = (ClampMin = "-200.0", ClampMax = "200.0", EditCondition = "HoverbEnableOutline && HoverbStripes"))
+	float HoverFlowSpeed = 20.0f;
+
+	/** Offset the stripe phase by camera yaw/pitch delta so rotating the camera does not make the stripes slide wildly across the object. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline|Stripes", meta = (EditCondition = "HoverbEnableOutline && HoverbStripes"))
+	bool HoverbCompensateCameraRotation = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hover Outline", meta = (ClampMin = "1", ClampMax = "255"))
+	int32 HoverStencilValue = 2;
+
 private:
+	TSharedPtr<FSelectOutlineViewExtension, ESPMode::ThreadSafe> HoverViewExtension;
 	void EnsureExtension();
 	void ReleaseExtension();
 
@@ -277,8 +317,8 @@ private:
 };
 
 /**
- * Global Blueprint nodes to control Outline, FilmMask (电影遮罩), and FilmMode (全局电影模式) from any graph without an actor reference.
- */
+	* Global Blueprint nodes to control Outline, FilmMask (电影遮罩), and FilmMode (全局电影模式) from any graph without an actor reference.
+	*/
 UCLASS()
 class SELECTOUTLINE_API USelectOutlineBlueprintLibrary : public UBlueprintFunctionLibrary
 {

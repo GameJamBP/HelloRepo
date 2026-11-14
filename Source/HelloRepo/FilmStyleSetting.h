@@ -8,10 +8,10 @@ class ACutActor;
 class UTextureRenderTarget2D;
 
 /**
- * Project subclass of AFilmStylePP that writes its state into USelectActorSubsystem
- * and drives the FilmMode transition (AB/CD for fade-in, EF/GH for fade-out)
- * when USelectActorSubsystem::bFilmMode changes.
- */
+	* Project subclass of AFilmStylePP that writes its state into USelectActorSubsystem
+	* and drives the FilmMode transition (AB/CD for fade-in, EF/GH for fade-out)
+	* when USelectActorSubsystem::bFilmMode changes.
+	*/
 UCLASS(Blueprintable, meta = (DisplayName = "FilmStyleSetting"))
 class HELLOREPO_API AFilmStyleSetting : public AFilmStylePP
 {
@@ -66,7 +66,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FilmStyleSetting|Subsystem")
 	void SyncStateToSubsystem();
 
+	/** Called on cut activation/RT readiness as well as Tick. */
+	UFUNCTION(BlueprintCallable, Category = "FilmStyleSetting|Subsystem")
+	void RefreshActiveCutTexture();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outline|Input")
+	float PressedBrightness = 0.5f;
+
+	UFUNCTION(BlueprintCallable, Category = "Outline|Input")
+	void SetSelectionPressed(bool bPressed);
+
 private:
+	bool bSelectionPressed = false;
+	FLinearColor ReleasedOutlineColor;
+	FLinearColor ReleasedHoverColor;
+
 	TWeakObjectPtr<ACutActor> LastActiveCutActor;
 	TWeakObjectPtr<UTextureRenderTarget2D> LastActiveCutRenderTarget;
 
