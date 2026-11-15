@@ -24,6 +24,16 @@ public class HelloRepo : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] {
+				"UnrealEd",
+				"AnimGraph",
+				"BlueprintGraph",
+				"AssetRegistry"
+			});
+		}
+
 		PublicIncludePaths.AddRange(new string[] {
 			"HelloRepo",
 			"HelloRepo/Variant_Platforming",
