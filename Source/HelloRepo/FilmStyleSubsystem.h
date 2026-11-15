@@ -77,6 +77,9 @@ struct HELLOREPO_API FSelectActorStateData
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleActiveCutActorChanged,
 	ACutActor*, PreviousCutActor, ACutActor*, NewCutActor);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleActiveCutActorChangedNative, ACutActor*, ACutActor*);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleHoveredPhotoChanged,
+	APhotoActor*, PreviousPhotoActor, APhotoActor*, NewPhotoActor);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleHoveredPhotoChangedNative, APhotoActor*, APhotoActor*);
 
 /** Owns the world's shared film-style state and active-cut transitions. */
 UCLASS(BlueprintType, DisplayName = "Film Style Subsystem")
@@ -120,6 +123,9 @@ public:
 
 	/** Native listeners may use AddUObject/AddLambda and retain the returned delegate handle. */
 	FOnFilmStyleActiveCutActorChangedNative& GetOnActiveCutActorChangedNative() { return ActiveCutActorChangedNative; }
+
+	/** Native listener notified whenever the crosshair-hovered PhotoActor changes. */
+	FOnFilmStyleHoveredPhotoChangedNative& GetOnHoveredPhotoActorChangedNative() { return HoveredPhotoActorChangedNative; }
 
 	UFUNCTION(BlueprintPure, Category = "Film Style|Selection")
 	ASelectableActorShell* GetTemporaryActiveActor() const;
@@ -181,6 +187,12 @@ private:
 	FOnFilmStyleActiveCutActorChanged OnActiveCutActorChanged;
 
 	FOnFilmStyleActiveCutActorChangedNative ActiveCutActorChangedNative;
+
+	/** Fires whenever the crosshair-hovered APhotoActor changes (including cleared to nullptr). */
+	UPROPERTY(BlueprintAssignable, Category = "Film Style|Selection", meta = (AllowPrivateAccess = "true"))
+	FOnFilmStyleHoveredPhotoChanged OnHoveredPhotoActorChanged;
+
+	FOnFilmStyleHoveredPhotoChangedNative HoveredPhotoActorChangedNative;
 	// Serialize listener requests so both delegate broadcasts see a completed transition.
 	bool bIsChangingCutState = false;
 	TArray<TFunction<void()>> PendingCutStateChanges;

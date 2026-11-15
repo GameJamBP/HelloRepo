@@ -20,6 +20,7 @@ public class HelloRepo : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
+			"SlateCore",
 			"SelectOutline"
 		});
 

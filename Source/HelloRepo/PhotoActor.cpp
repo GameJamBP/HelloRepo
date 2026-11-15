@@ -52,6 +52,8 @@ APhotoActor::APhotoActor()
 	PhotoMaterial = TSoftObjectPtr<UMaterialInterface>(
 		FSoftObjectPath(TEXT("/Game/CommonActor/M_PhotoSurface.M_PhotoSurface")));
 
+	HoverPromptText = NSLOCTEXT("PhotoActor", "DefaultHoverPrompt", "Get Cut Clip");
+
 	UpdatePhotoLayout(CurrentAspectRatio);
 }
 

@@ -5,6 +5,8 @@
 #include "FilmStyleControlActor.generated.h"
 
 class AFilmStyleSetting;
+class APhotoActor;
+class UPhotoHoverPromptWidget;
 
 UCLASS(Blueprintable)
 class HELLOREPO_API AFilmStyleControlActor : public AActor
@@ -30,6 +32,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Control")
 	int32 ActiveCutIndex = -1;
 
+	/** Optional override widget class for the fixed screen-space photo hover prompt. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Control|UI")
+	TSubclassOf<UPhotoHoverPromptWidget> PhotoHoverPromptClass;
+
+	/** Returns the active photo hover prompt widget instance if created. */
+	UFUNCTION(BlueprintPure, Category = "Control|UI")
+	UPhotoHoverPromptWidget* GetPhotoHoverPromptWidget() const { return PhotoHoverPromptWidget; }
+
 	/** Queue selection until this frame's camera and center trace have updated. */
 	UFUNCTION(BlueprintCallable, Category = "Control|Selection")
 	void BeginSelection();
@@ -53,6 +63,13 @@ public:
 private:
 	/** Cycle registered Cuts independently of film mask settings. */
 	void ScrollCut(int32 Direction);
+
+	void HandleHoveredPhotoActorChanged(APhotoActor* PreviousPhoto, APhotoActor* NewPhoto);
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPhotoHoverPromptWidget> PhotoHoverPromptWidget;
+
+	FDelegateHandle HoveredPhotoChangedHandle;
 
 	// Input runs before the camera update; apply clicks after this frame's trace.
 	bool bSelectionRequested = false;

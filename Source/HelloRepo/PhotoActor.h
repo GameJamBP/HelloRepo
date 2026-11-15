@@ -50,6 +50,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Interaction", meta = (ClampMin = "0", ClampMax = "255"))
 	int32 HoverStencilValue = 2;
 
+	/** Prompt text shown in the fixed screen-space hover popup when the crosshair targets this photo. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Interaction")
+	FText HoverPromptText;
+
 	/** Automatically scales PhotoMesh and FrameMesh to match the captured viewport aspect ratio. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Appearance")
 	bool bAutoSizeToAspectRatio = true;
@@ -93,6 +97,10 @@ public:
 	/** Updates Hover outline state (CustomDepth stencil = HoverStencilValue). */
 	UFUNCTION(BlueprintCallable, Category = "Photo|Interaction")
 	void SetHovered(bool bNewHovered);
+
+	/** Returns the localized prompt text displayed when hovering this photo (defaults to "Get Cut Clip"). */
+	UFUNCTION(BlueprintPure, Category = "Photo|Interaction")
+	const FText& GetHoverPromptText() const { return HoverPromptText; }
 
 	/** Checks whether an interactor at InteractorLocation is within MaxInteractionDistance. */
 	UFUNCTION(BlueprintPure, Category = "Photo|Interaction")

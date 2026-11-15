@@ -2,14 +2,17 @@
 #include "FilmStyleSetting.h"
 #include "FilmStyleSubsystem.h"
 #include "PhotoActor.h"
+#include "PhotoHoverPromptWidget.h"
 #include "SelectableActorShell.h"
 #include "CutActor.h"
+#include "Blueprint/UserWidget.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/PackageName.h"
 
 AFilmStyleControlActor::AFilmStyleControlActor()
 {
@@ -30,6 +33,13 @@ void AFilmStyleControlActor::BeginPlay()
 		}
 	}
 	ACutActor::ClearActive(this);
+
+	if (auto* Context = UFilmStyleSubsystem::Get(this))
+	{
+		HoveredPhotoChangedHandle = Context->GetOnHoveredPhotoActorChangedNative().AddUObject(
+			this, &AFilmStyleControlActor::HandleHoveredPhotoActorChanged);
+		HandleHoveredPhotoActorChanged(nullptr, Context->GetTemporaryHoveredPhotoActor());
+	}
 }
 
 void AFilmStyleControlActor::Tick(float DeltaSeconds)
@@ -200,13 +210,71 @@ void AFilmStyleControlActor::ScrollCut(int32 Direction)
 	Context->SetActiveCutActor(Cuts[ActiveCutIndex]);
 }
 
+void AFilmStyleControlActor::HandleHoveredPhotoActorChanged(APhotoActor* /*PreviousPhoto*/, APhotoActor* NewPhoto)
+{
+	if (!IsValid(NewPhoto))
+	{
+		if (PhotoHoverPromptWidget)
+		{
+			PhotoHoverPromptWidget->HidePrompt();
+		}
+		return;
+	}
+
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC || !PC->IsLocalController())
+	{
+		return;
+	}
+
+	if (!PhotoHoverPromptWidget)
+	{
+		UClass* WidgetClass = PhotoHoverPromptClass.Get();
+		if (!WidgetClass)
+		{
+			static const TCHAR* DefaultPromptBlueprintPath = TEXT("/Game/UI/WBP_PhotoHoverPrompt");
+			if (FPackageName::DoesPackageExist(DefaultPromptBlueprintPath))
+			{
+				WidgetClass = LoadClass<UPhotoHoverPromptWidget>(
+					nullptr, TEXT("/Game/UI/WBP_PhotoHoverPrompt.WBP_PhotoHoverPrompt_C"));
+			}
+		}
+		if (!WidgetClass)
+		{
+			WidgetClass = UPhotoHoverPromptWidget::StaticClass();
+		}
+
+		PhotoHoverPromptWidget = CreateWidget<UPhotoHoverPromptWidget>(PC, WidgetClass);
+	}
+
+	if (PhotoHoverPromptWidget)
+	{
+		if (!PhotoHoverPromptWidget->IsInViewport())
+		{
+			PhotoHoverPromptWidget->AddToPlayerScreen(50);
+		}
+		PhotoHoverPromptWidget->ShowPrompt(NewPhoto->GetHoverPromptText());
+	}
+}
+
 void AFilmStyleControlActor::EndPlay(const EEndPlayReason::Type Reason)
 {
 	CancelSelection();
 	if (auto* Context = UFilmStyleSubsystem::Get(this))
 	{
+		if (HoveredPhotoChangedHandle.IsValid())
+		{
+			Context->GetOnHoveredPhotoActorChangedNative().Remove(HoveredPhotoChangedHandle);
+			HoveredPhotoChangedHandle.Reset();
+		}
 		Context->SetTemporaryActiveActor(nullptr);
 		Context->SetTemporaryHoveredPhotoActor(nullptr);
+	}
+	if (PhotoHoverPromptWidget)
+	{
+		PhotoHoverPromptWidget->HidePrompt();
+		PhotoHoverPromptWidget->RemoveFromParent();
+		PhotoHoverPromptWidget = nullptr;
 	}
 	Super::EndPlay(Reason);
 }

@@ -249,11 +249,12 @@ void UFilmStyleSubsystem::SetTemporaryHoveredPhotoActor(APhotoActor* Actor)
 	{
 		SetTemporaryActiveActor(nullptr);
 	}
-	if (TemporaryHoveredPhotoActor.Get() == Actor)
+	if (!TemporaryHoveredPhotoActor.IsStale() && TemporaryHoveredPhotoActor.Get() == Actor)
 	{
 		return;
 	}
-	if (APhotoActor* Old = TemporaryHoveredPhotoActor.Get())
+	APhotoActor* Old = TemporaryHoveredPhotoActor.Get();
+	if (Old)
 	{
 		Old->SetHovered(false);
 	}
@@ -262,6 +263,8 @@ void UFilmStyleSubsystem::SetTemporaryHoveredPhotoActor(APhotoActor* Actor)
 	{
 		Actor->SetHovered(true);
 	}
+	HoveredPhotoActorChangedNative.Broadcast(Old, Actor);
+	OnHoveredPhotoActorChanged.Broadcast(Old, Actor);
 }
 
 APhotoActor* UFilmStyleSubsystem::GetTemporaryHoveredPhotoActor() const

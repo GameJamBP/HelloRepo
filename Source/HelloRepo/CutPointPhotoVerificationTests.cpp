@@ -27,6 +27,8 @@
 #include "HelloRepoCharacter.h"
 #include "HelloRepoPlayerController.h"
 #include "PhotoActor.h"
+#include "PhotoHoverPromptWidget.h"
+#include "Components/SizeBox.h"
 
 namespace CutPointPhotoVerifyInternal
 {
@@ -301,13 +303,16 @@ namespace CutPointPhotoVerifyInternal
 			{
 				if (StageTicks == 1)
 				{
-					// Aim crosshair directly at PhotoActor center.
-					const FVector AimDir = (PhotoActor->GetActorLocation() - PC->PlayerCameraManager->GetCameraLocation()).GetSafeNormal();
-					PC->SetControlRotation(AimDir.Rotation());
+					// Move PhotoActor closer (130 cm) and aim directly at center to measure close-range screen-space size.
+					OrigPhotoLocation = PhotoActor->GetActorLocation();
+					const FVector CamLocNow = PC->PlayerCameraManager->GetCameraLocation();
+					const FVector AimForward = (OrigPhotoLocation - CamLocNow).GetSafeNormal();
+					PhotoActor->SetActorLocation(CamLocNow + AimForward * 130.0f);
+					PC->SetControlRotation(AimForward.Rotation());
 					return false;
 				}
 
-				if (StageTicks < 5)
+				if (StageTicks < 10)
 				{
 					return false;
 				}
@@ -341,15 +346,95 @@ namespace CutPointPhotoVerifyInternal
 				Test->TestEqual(TEXT("FrameMesh CustomDepthStencilValue == HoverStencilValue (2)"),
 					PhotoActor->FrameMesh->CustomDepthStencilValue, 2);
 
-				// First left-click interaction via IA_Select
-				InputSys->InjectInputForAction(SelectAction.Get(), FInputActionValue(true), {}, {});
+				// Screen-space fixed-size hover popup checks at close range (130 cm)
+				UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget();
+				Test->TestNotNull(TEXT("PhotoHoverPromptWidget created when hovering PhotoActor"), HoverPopup);
+				if (HoverPopup)
+				{
+					Test->TestEqual(TEXT("Hover popup uses WBP_PhotoHoverPrompt_C"),
+						HoverPopup->GetClass()->GetPathName(),
+						FString(TEXT("/Game/UI/WBP_PhotoHoverPrompt.WBP_PhotoHoverPrompt_C")));
+					Test->TestTrue(TEXT("Hover popup is in viewport/player screen"), HoverPopup->IsInViewport());
+					Test->TestEqual(TEXT("Hover popup visibility is HitTestInvisible so clicks pass through"),
+						HoverPopup->GetVisibility(), ESlateVisibility::HitTestInvisible);
+					Test->TestEqual(TEXT("Hover popup displays 'Get Cut Clip'"),
+						HoverPopup->GetPromptText().ToString(), FString(TEXT("Get Cut Clip")));
+
+					if (USizeBox* PopupSizeBox = HoverPopup->GetPopupSizeBox())
+					{
+						Test->TestTrue(TEXT("PopupSizeBox WidthOverride == 224"),
+							FMath::IsNearlyEqual(PopupSizeBox->GetWidthOverride(), 224.0f, 0.1f));
+						Test->TestTrue(TEXT("PopupSizeBox HeightOverride == 48"),
+							FMath::IsNearlyEqual(PopupSizeBox->GetHeightOverride(), 48.0f, 0.1f));
+
+						ClosePopupScreenSize = PopupSizeBox->GetCachedGeometry().GetLocalSize();
+						Test->TestTrue(
+							FString::Printf(TEXT("Popup close-range screen-space size is 224x48 (actual=%.1fx%.1f)"),
+								ClosePopupScreenSize.X, ClosePopupScreenSize.Y),
+							ClosePopupScreenSize.Equals(FVector2D(224.0f, 48.0f), 1.0f));
+					}
+					else
+					{
+						Test->AddError(TEXT("Hover popup missing PopupSizeBox"));
+					}
+				}
+
+				Transition(EStage::VerifyFixedPopupAtFarDistance);
+				return false;
+			}
+
+			case EStage::VerifyFixedPopupAtFarDistance:
+			{
+				if (StageTicks == 1)
+				{
+					// Move PhotoActor 3.2x farther (420 cm) along view ray to prove popup stays fixed in screen space.
+					const FVector CamLocNow = PC->PlayerCameraManager->GetCameraLocation();
+					const FVector AimForward = (OrigPhotoLocation - CamLocNow).GetSafeNormal();
+					PhotoActor->SetActorLocation(CamLocNow + AimForward * 420.0f);
+					PC->SetControlRotation(AimForward.Rotation());
+					return false;
+				}
+
+				if (StageTicks < 5)
+				{
+					return false;
+				}
+
+				Test->TestTrue(TEXT("PhotoActor stays hovered at far range"), PhotoActor->bIsHovered);
+				if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+				{
+					Test->TestEqual(TEXT("Hover popup remains HitTestInvisible at far range"),
+						HoverPopup->GetVisibility(), ESlateVisibility::HitTestInvisible);
+					if (USizeBox* PopupSizeBox = HoverPopup->GetPopupSizeBox())
+					{
+						const FVector2D FarPopupScreenSize = PopupSizeBox->GetCachedGeometry().GetLocalSize();
+						Test->TestTrue(
+							FString::Printf(TEXT("Popup screen-space size unchanged at 3.2x distance (close=%.1fx%.1f, far=%.1fx%.1f)"),
+								ClosePopupScreenSize.X, ClosePopupScreenSize.Y,
+								FarPopupScreenSize.X, FarPopupScreenSize.Y),
+							FarPopupScreenSize.Equals(ClosePopupScreenSize, 0.5f)
+							&& FarPopupScreenSize.Equals(FVector2D(224.0f, 48.0f), 1.0f));
+					}
+				}
+
+				PhotoActor->SetActorLocation(OrigPhotoLocation);
+				const FVector AimDir = (OrigPhotoLocation - PC->PlayerCameraManager->GetCameraLocation()).GetSafeNormal();
+				PC->SetControlRotation(AimDir.Rotation());
+
 				Transition(EStage::VerifyFirstInteraction);
 				return false;
 			}
 
 			case EStage::VerifyFirstInteraction:
 			{
-				if (StageTicks < 4)
+				if (StageTicks == 1)
+				{
+					// First left-click interaction via IA_Select (must pass straight through HitTestInvisible popup)
+					InputSys->InjectInputForAction(SelectAction.Get(), FInputActionValue(true), {}, {});
+					return false;
+				}
+
+				if (StageTicks < 5)
 				{
 					return false;
 				}
@@ -445,6 +530,32 @@ namespace CutPointPhotoVerifyInternal
 						FMath::IsNearlyEqual(SpawnedCut2->CaptureComponent2D->FOVAngle, 60.0f, 0.01f));
 				}
 
+				Transition(EStage::VerifyPopupHidesOnUnhover);
+				return false;
+			}
+
+			case EStage::VerifyPopupHidesOnUnhover:
+			{
+				if (StageTicks == 1)
+				{
+					// Aim away from PhotoActor so hover ends.
+					PC->SetControlRotation(FRotator(80.0f, 0.0f, 0.0f));
+					return false;
+				}
+
+				if (StageTicks < 4)
+				{
+					return false;
+				}
+
+				Test->TestNull(TEXT("TemporaryHoveredPhotoActor cleared on unhover"),
+					Subsystem->GetTemporaryHoveredPhotoActor());
+				Test->TestFalse(TEXT("PhotoActor bIsHovered == false on unhover"), PhotoActor->bIsHovered);
+				if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+				{
+					Test->TestEqual(TEXT("Hover popup Collapsed when unhovered"),
+						HoverPopup->GetVisibility(), ESlateVisibility::Collapsed);
+				}
 				return true;
 			}
 			}
@@ -458,8 +569,10 @@ namespace CutPointPhotoVerifyInternal
 			InitAndSpawn,
 			WaitCaptureFinalize,
 			VerifyStaysInactiveAndHover,
+			VerifyFixedPopupAtFarDistance,
 			VerifyFirstInteraction,
-			VerifyReuseAndRespawn
+			VerifyReuseAndRespawn,
+			VerifyPopupHidesOnUnhover
 		};
 
 		void Transition(EStage NextStage)
@@ -475,6 +588,8 @@ namespace CutPointPhotoVerifyInternal
 
 		FVector CutPointLocation = FVector::ZeroVector;
 		FRotator CutPointRotation = FRotator::ZeroRotator;
+		FVector OrigPhotoLocation = FVector::ZeroVector;
+		FVector2D ClosePopupScreenSize = FVector2D::ZeroVector;
 
 		TWeakObjectPtr<UInputAction> SelectAction;
 		TWeakObjectPtr<AStaticMeshActor> TargetBox;
