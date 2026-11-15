@@ -8,6 +8,9 @@
 
 class UInputMappingContext;
 class UUserWidget;
+class UHelloRepoInputComponent;
+class UHelloRepoInputConfig;
+class AFilmStyleControlActor;
 
 /**
  *  Basic PlayerController class for a third person game
@@ -17,8 +20,19 @@ UCLASS(abstract)
 class AHelloRepoPlayerController : public APlayerController
 {
 	GENERATED_BODY()
-	
+
+public:
+	virtual void SetInputMode(const FInputModeDataBase& InData) override;
+	virtual void FlushPressedKeys() override;
+
 protected:
+	/** Authored Action-to-Tag pairs. Key mappings stay in the IMCs below. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<const UHelloRepoInputConfig> InputConfig;
+
+	/** Optional runtime assignment; otherwise resolved from the current world on use. */
+	UPROPERTY(Transient, BlueprintReadWrite, Category = "Input|Film Style")
+	TObjectPtr<AFilmStyleControlActor> FilmStyleControlActor;
 
 	/** Input Mapping Contexts */
 	UPROPERTY(EditAnywhere, Category ="Input|Input Mappings")
@@ -45,8 +59,24 @@ protected:
 
 	/** Input mapping context setup */
 	virtual void SetupInputComponent() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;
 
+private:
+	void BindFilmStyleInput();
+	void ClearFilmStyleInputBindings();
+	void CancelFilmStyleSelection();
+	AFilmStyleControlActor* ResolveFilmStyleControlActor();
+	void Input_SelectStarted();
+	void Input_SelectCompleted();
+	void Input_SelectCanceled();
+	void Input_ToggleFilmMask();
+	void Input_NextCut();
+	void Input_PreviousCut();
+
+	TWeakObjectPtr<UHelloRepoInputComponent> BoundFilmStyleInputComponent;
+	TWeakObjectPtr<AFilmStyleControlActor> SelectionControlActor;
+	TArray<uint32> FilmStyleInputBindingHandles;
 };

@@ -8,7 +8,6 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
-#include "InputCoreTypes.h"
 
 AFilmStyleControlActor::AFilmStyleControlActor()
 {
@@ -73,60 +72,84 @@ void AFilmStyleControlActor::Tick(float DeltaSeconds)
 	}
 	Context->SetTemporaryActiveActor(Target);
 
-	const bool bPressed = PC && PC->IsInputKeyDown(EKeys::LeftMouseButton);
-	if (bPressed != bWasPressed)
+	if (bSelectionRequested)
 	{
-		if (bPressed && Target)
+		bSelectionRequested = false;
+		if (IsValid(Target))
 		{
 			Target->SetActorSelected(!Target->bIsSelected);
 		}
-		if (IsValid(FilmStyleSetting))
-		{
-			FilmStyleSetting->SetSelectionPressed(bPressed);
-		}
-		bWasPressed = bPressed;
 	}
+}
 
-	if (!PC || !IsValid(FilmStyleSetting))
+void AFilmStyleControlActor::BeginSelection()
+{
+	bSelectionRequested = true;
+	if (IsValid(FilmStyleSetting))
+	{
+		FilmStyleSetting->SetSelectionPressed(true);
+	}
+}
+
+void AFilmStyleControlActor::EndSelection()
+{
+	if (IsValid(FilmStyleSetting))
+	{
+		FilmStyleSetting->SetSelectionPressed(false);
+	}
+}
+
+void AFilmStyleControlActor::CancelSelection()
+{
+	bSelectionRequested = false;
+	EndSelection();
+}
+
+void AFilmStyleControlActor::ToggleFilmMask()
+{
+	auto* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
+	if (!Context || !IsValid(FilmStyleSetting))
 	{
 		return;
 	}
 
-	if (PC->WasInputKeyJustPressed(EKeys::F))
+	ESelectFilmMaskMode Mode = ESelectFilmMaskMode::Checkerboard;
+	if (FilmStyleSetting->FilmMaskMode == ESelectFilmMaskMode::Checkerboard)
 	{
-		ESelectFilmMaskMode Mode = ESelectFilmMaskMode::Checkerboard;
-		if (FilmStyleSetting->FilmMaskMode == ESelectFilmMaskMode::Checkerboard)
-		{
-			// Preserve the current Cut when toggling back from checkerboard.
-			Mode = IsValid(Context->ActiveCutActor)
-				? ESelectFilmMaskMode::RenderTarget
-				: ESelectFilmMaskMode::SolidColor;
-		}
-		FilmStyleSetting->SetFilmMaskMode(Mode);
-		FilmStyleSetting->SetFilmMaskEnabled(true);
-		FilmStyleSetting->RefreshActiveCutTexture();
-		FilmStyleSetting->SyncStateToSubsystem();
+		// Preserve the current Cut when toggling back from checkerboard.
+		Mode = IsValid(Context->ActiveCutActor)
+			? ESelectFilmMaskMode::RenderTarget
+			: ESelectFilmMaskMode::SolidColor;
 	}
+	FilmStyleSetting->SetFilmMaskMode(Mode);
+	FilmStyleSetting->SetFilmMaskEnabled(true);
+	FilmStyleSetting->RefreshActiveCutTexture();
+	FilmStyleSetting->SyncStateToSubsystem();
+}
 
-	if (PC->WasInputKeyJustPressed(EKeys::MouseScrollUp))
-	{
-		ScrollCut(1);
-	}
+void AFilmStyleControlActor::NextCut()
+{
+	ScrollCut(1);
+}
 
-	if (PC->WasInputKeyJustPressed(EKeys::MouseScrollDown))
-	{
-		ScrollCut(-1);
-	}
+void AFilmStyleControlActor::PreviousCut()
+{
+	ScrollCut(-1);
 }
 
 void AFilmStyleControlActor::ScrollCut(int32 Direction)
 {
-	if (FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::RenderTarget && FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::SolidColor)
+	if (!IsValid(FilmStyleSetting)
+		|| (FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::RenderTarget && FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::SolidColor))
 	{
 		return;
 	}
 
 	auto* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
+	if (!Context)
+	{
+		return;
+	}
 	TArray<ACutActor*> Cuts;
 	for (auto Cut : Context->CutActors)
 	{
@@ -153,14 +176,10 @@ void AFilmStyleControlActor::ScrollCut(int32 Direction)
 
 void AFilmStyleControlActor::EndPlay(const EEndPlayReason::Type Reason)
 {
+	CancelSelection();
 	if (auto* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>())
 	{
 		Context->SetTemporaryActiveActor(nullptr);
 	}
-	if (IsValid(FilmStyleSetting))
-	{
-		FilmStyleSetting->SetSelectionPressed(false);
-	}
-
 	Super::EndPlay(Reason);
 }
