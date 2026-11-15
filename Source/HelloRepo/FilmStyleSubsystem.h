@@ -50,6 +50,10 @@ struct HELLOREPO_API FSelectActorStateData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select State")
 	float FilmGradingAmount = 0.0f;
 
+	/** Current RenderTargetOpacity (0..1) applied when FilmMaskMode == RenderTarget. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select State")
+	float RenderTargetOpacity = 1.0f;
+
 	/** Returns true when SelectActor is active and in Checkerboard (棋盘格) state. */
 	bool IsCheckerboardState() const
 	{
@@ -143,6 +147,7 @@ private:
 	void ApplyRegisterCutActor(ACutActor* Actor);
 	void TrimCutActorsToLimit();
 	void ApplyActiveCutActor(ACutActor* Actor);
+	void SyncActiveCutCaptureState();
 	void RefreshActiveCutConsumers();
 
 	UPROPERTY(Transient, BlueprintGetter = GetCutActorsForBlueprint, BlueprintSetter = SetCutActors, Category = "Film Style|Cut", meta = (AllowPrivateAccess = "true"))

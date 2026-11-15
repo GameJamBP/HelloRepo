@@ -150,6 +150,12 @@ void AFilmStylePP::SetReplaceTexture(UTexture* InTexture, bool bEnableReplacemen
 	RefreshOutline();
 }
 
+void AFilmStylePP::SetRenderTargetOpacity(float InRenderTargetOpacity)
+{
+	RenderTargetOpacity = FMath::Clamp(InRenderTargetOpacity, 0.f, 1.f);
+	RefreshOutline();
+}
+
 void AFilmStylePP::SetFilmModeEnabled(bool bInEnabled)
 {
 	bEnableFilmMode = bInEnabled;
@@ -198,7 +204,10 @@ void AFilmStylePP::RefreshOutline()
 	}
 
 	const bool bHasOutline = bEnableOutline && (Thickness > 0.f);
-	const bool bHasFilmMask = bEnableFilmMask && (FilmMaskMode != ESelectFilmMaskMode::None) && (FilmMaskOpacity > 0.f);
+	const float EffectiveMaskOpacity = (FilmMaskMode == ESelectFilmMaskMode::RenderTarget)
+		? (FilmMaskOpacity * RenderTargetOpacity)
+		: FilmMaskOpacity;
+	const bool bHasFilmMask = bEnableFilmMask && (FilmMaskMode != ESelectFilmMaskMode::None) && (EffectiveMaskOpacity > 0.f);
 	const bool bHasFilmMode = bEnableFilmMode && (FilmBlackBarAmount > 0.f || FilmGradingAmount > 0.f);
 	if (!bEnable || (!bHasOutline && !bHasFilmMask && !bHasFilmMode && !(HoverbEnableOutline && HoverThickness > 0.f)))
 	{
@@ -239,6 +248,7 @@ void AFilmStylePP::RefreshOutline()
 	S.bEnableFilmMask = bEnableFilmMask;
 	S.FilmMaskMode = bEnableFilmMask ? static_cast<int32>(FilmMaskMode) : 0;
 	S.FilmMaskOpacity = FMath::Clamp(FilmMaskOpacity, 0.f, 1.f);
+	S.RenderTargetOpacity = FMath::Clamp(RenderTargetOpacity, 0.f, 1.f);
 	S.DepthOcclusionBias = FMath::Max(0.f, DepthOcclusionBias);
 
 	S.ReplaceTextureResource = ReplaceResource;

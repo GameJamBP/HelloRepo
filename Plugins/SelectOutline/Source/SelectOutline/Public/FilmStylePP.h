@@ -73,6 +73,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FilmMask")
 	void SetReplaceTexture(UTexture* InTexture, bool bEnableReplacement = true);
 
+	/** Set the RenderTarget opacity multiplier (0 = transparent, 1 = opaque) and refresh post-process settings. */
+	UFUNCTION(BlueprintCallable, Category = "FilmMask")
+	void SetRenderTargetOpacity(float InRenderTargetOpacity);
+
 	/** Enable or disable FilmMode (全局电影黑边与胶片调色) independently. */
 	UFUNCTION(BlueprintCallable, Category = "FilmMode")
 	void SetFilmModeEnabled(bool bInEnabled);
@@ -178,6 +182,10 @@ public:
 	/** Ignore the replacement texture's Alpha channel (recommended for SceneCapture2D RenderTargets, which write Alpha = 0 by default). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmMask|RenderTarget", meta = (EditCondition = "bEnableFilmMask && FilmMaskMode == ESelectFilmMaskMode::RenderTarget"))
 	bool bIgnoreReplaceAlpha = true;
+
+	/** Opacity multiplier specifically applied to RenderTarget replacement (0 = transparent, 1 = opaque; driven by FilmStyleSetting during FilmMode transitions). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmMask|RenderTarget", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float RenderTargetOpacity = 1.0f;
 
 	/** UV tiling of the replacement texture across the viewport. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmMask|RenderTarget", meta = (EditCondition = "bEnableFilmMask && FilmMaskMode == ESelectFilmMaskMode::RenderTarget"))

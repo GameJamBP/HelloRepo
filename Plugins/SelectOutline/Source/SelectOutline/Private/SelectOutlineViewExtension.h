@@ -38,6 +38,7 @@ struct FSelectOutlineSettings
 	// 0 = None, 1 = RenderTarget, 2 = SolidColor, 3 = Checkerboard, 4 = ColorGrading
 	int32 FilmMaskMode = 0;
 	float FilmMaskOpacity = 1.f;
+	float RenderTargetOpacity = 1.f;
 	float DepthOcclusionBias = 0.0001f;
 
 	// Mode 1: RenderTarget / Texture

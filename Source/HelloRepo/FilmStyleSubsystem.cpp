@@ -163,13 +163,33 @@ void UFilmStyleSubsystem::ApplyActiveCutActor(ACutActor* Actor)
 	if (Actor)
 	{
 		Actor->UpdateRenderTarget();
-		Actor->SetCaptureActive(true);
+		Actor->SetCaptureActive(bFilmMode);
 	}
 	ActiveCutActor = Actor;
 	RefreshActiveCutConsumers();
 
 	ActiveCutActorChangedNative.Broadcast(PreviousCutActor, Actor);
 	OnActiveCutActorChanged.Broadcast(PreviousCutActor, Actor);
+}
+
+void UFilmStyleSubsystem::SyncActiveCutCaptureState()
+{
+	ACutActor* Active = ActiveCutActor.Get();
+	for (ACutActor* Cut : CutActors)
+	{
+		if (IsValid(Cut))
+		{
+			Cut->SetCaptureActive(bFilmMode && Cut == Active);
+		}
+	}
+	if (IsValid(Active))
+	{
+		Active->SetCaptureActive(bFilmMode);
+		if (bFilmMode)
+		{
+			Active->UpdateRenderTarget();
+		}
+	}
 }
 
 void UFilmStyleSubsystem::RefreshActiveCutConsumers()
@@ -183,6 +203,10 @@ void UFilmStyleSubsystem::RefreshActiveCutConsumers()
 void UFilmStyleSubsystem::SetFilmMode(bool bInFilmMode)
 {
 	bFilmMode = bInFilmMode;
+	RunCutStateChange([this]
+	{
+		SyncActiveCutCaptureState();
+	});
 }
 
 void UFilmStyleSubsystem::SetSelectActorData(const FSelectActorStateData& InData)

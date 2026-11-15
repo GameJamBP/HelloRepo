@@ -351,7 +351,10 @@ FScreenPassTexture FSelectOutlineViewExtension::PostProcess_RenderThread(FRDGBui
 		Parameters->GradingShadowTint = FVector4f(S.GradingShadowTint);
 		Parameters->GradingHighlightTint = FVector4f(S.GradingHighlightTint);
 		Parameters->GradingParams = FVector4f(S.GradingIntensity, S.GradingContrast, S.GradingSaturation, FMath::Max(1.f, S.CheckerSize));
-		Parameters->FillParams = FVector2f(FMath::Clamp(S.FilmMaskOpacity, 0.f, 1.f), S.bIgnoreReplaceAlpha ? 1.f : 0.f);
+		const float MaskOpacity = (EffectiveFilmMaskMode == 1)
+			? FMath::Clamp(S.FilmMaskOpacity * S.RenderTargetOpacity, 0.f, 1.f)
+			: FMath::Clamp(S.FilmMaskOpacity, 0.f, 1.f);
+		Parameters->FillParams = FVector2f(MaskOpacity, S.bIgnoreReplaceAlpha ? 1.f : 0.f);
 		Parameters->FillMode = EffectiveFilmMaskMode;
 		Parameters->Thickness = Thickness;
 		Parameters->SearchRadius = SearchRadius;

@@ -24,6 +24,9 @@ void AFilmStyleSetting::BeginPlay()
 	bWasSubsystemFilmMode = false;
 	bIsFadingOutFilmMode = false;
 	FilmModeElapsedTime = 0.0f;
+	RenderTargetOpacity = FMath::Clamp(static_cast<float>(RTOpacityRange.X), 0.0f, 1.0f);
+	FadeInStartRTOpacity = RenderTargetOpacity;
+	FadeOutStartRTOpacity = RenderTargetOpacity;
 	RefreshActiveCutTexture();
 
 	if (UWorld* World = GetWorld())
@@ -34,6 +37,7 @@ void AFilmStyleSetting::BeginPlay()
 		}
 	}
 
+	RefreshOutline();
 	SyncStateToSubsystem();
 }
 
@@ -90,6 +94,15 @@ void AFilmStyleSetting::Tick(float DeltaSeconds)
 void AFilmStyleSetting::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
+	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
+	const FName MemberPropertyName = PropertyChangedEvent.GetMemberPropertyName();
+	if (!bWasSubsystemFilmMode && !bIsFadingOutFilmMode
+		&& (PropertyName == GET_MEMBER_NAME_CHECKED(AFilmStyleSetting, RTOpacityRange)
+			|| MemberPropertyName == GET_MEMBER_NAME_CHECKED(AFilmStyleSetting, RTOpacityRange)))
+	{
+		RenderTargetOpacity = FMath::Clamp(static_cast<float>(RTOpacityRange.X), 0.0f, 1.0f);
+		RefreshOutline();
+	}
 	SyncStateToSubsystem();
 }
 #endif
@@ -114,6 +127,9 @@ float AFilmStyleSetting::ComputeTransitionAlpha(float ElapsedTime, const FVector
 
 void AFilmStyleSetting::UpdateFilmModeTransition(float DeltaSeconds, bool bSubsystemFilmMode)
 {
+	const float BeforeRTOpacity = FMath::Clamp(static_cast<float>(RTOpacityRange.X), 0.0f, 1.0f);
+	const float AfterRTOpacity = FMath::Clamp(static_cast<float>(RTOpacityRange.Y), 0.0f, 1.0f);
+
 	if (bSubsystemFilmMode)
 	{
 		if (!bWasSubsystemFilmMode)
@@ -121,6 +137,7 @@ void AFilmStyleSetting::UpdateFilmModeTransition(float DeltaSeconds, bool bSubsy
 			bWasSubsystemFilmMode = true;
 			bIsFadingOutFilmMode = false;
 			FilmModeElapsedTime = 0.0f;
+			FadeInStartRTOpacity = FMath::Clamp(RenderTargetOpacity, 0.0f, 1.0f);
 		}
 		else
 		{
@@ -130,18 +147,21 @@ void AFilmStyleSetting::UpdateFilmModeTransition(float DeltaSeconds, bool bSubsy
 		bEnableFilmMode = true;
 		FilmBlackBarAmount = ComputeTransitionAlpha(FilmModeElapsedTime, AB);
 		FilmGradingAmount = ComputeTransitionAlpha(FilmModeElapsedTime, CD);
+		const float RTOpacityInAlpha = ComputeTransitionAlpha(FilmModeElapsedTime, RTOpacityInTiming);
+		RenderTargetOpacity = FMath::Lerp(FadeInStartRTOpacity, AfterRTOpacity, RTOpacityInAlpha);
 		RefreshOutline();
 	}
 	else
 	{
 		if (bWasSubsystemFilmMode)
 		{
-			// Just transitioned from bFilmMode = true -> false: start EF / GH fade-out
+			// Just transitioned from bFilmMode = true -> false: start EF / GH / RT opacity fade-out
 			bWasSubsystemFilmMode = false;
 			bIsFadingOutFilmMode = true;
 			FilmModeElapsedTime = 0.0f;
-			FadeOutStartBlackBarAmount = 1.0f;
-			FadeOutStartGradingAmount = 1.0f;
+			FadeOutStartBlackBarAmount = FMath::Clamp(FilmBlackBarAmount, 0.0f, 1.0f);
+			FadeOutStartGradingAmount = FMath::Clamp(FilmGradingAmount, 0.0f, 1.0f);
+			FadeOutStartRTOpacity = FMath::Clamp(RenderTargetOpacity, 0.0f, 1.0f);
 		}
 		else if (bIsFadingOutFilmMode)
 		{
@@ -152,22 +172,30 @@ void AFilmStyleSetting::UpdateFilmModeTransition(float DeltaSeconds, bool bSubsy
 		{
 			const float BlackBarOutAlpha = ComputeTransitionAlpha(FilmModeElapsedTime, EF);
 			const float GradingOutAlpha = ComputeTransitionAlpha(FilmModeElapsedTime, GH);
+			const float RTOpacityOutAlpha = ComputeTransitionAlpha(FilmModeElapsedTime, RTOpacityOutTiming);
 
 			FilmBlackBarAmount = FadeOutStartBlackBarAmount * (1.0f - BlackBarOutAlpha);
 			FilmGradingAmount = FadeOutStartGradingAmount * (1.0f - GradingOutAlpha);
+			RenderTargetOpacity = FMath::Lerp(FadeOutStartRTOpacity, BeforeRTOpacity, RTOpacityOutAlpha);
 
-			if (BlackBarOutAlpha >= 1.0f && GradingOutAlpha >= 1.0f)
+			if (BlackBarOutAlpha >= 1.0f && GradingOutAlpha >= 1.0f && RTOpacityOutAlpha >= 1.0f)
 			{
 				bIsFadingOutFilmMode = false;
 				bEnableFilmMode = false;
 				FilmBlackBarAmount = 0.0f;
 				FilmGradingAmount = 0.0f;
+				RenderTargetOpacity = BeforeRTOpacity;
 			}
 			else
 			{
 				bEnableFilmMode = true;
 			}
 
+			RefreshOutline();
+		}
+		else if (!FMath::IsNearlyEqual(RenderTargetOpacity, BeforeRTOpacity))
+		{
+			RenderTargetOpacity = BeforeRTOpacity;
 			RefreshOutline();
 		}
 	}
@@ -197,6 +225,7 @@ void AFilmStyleSetting::SyncStateToSubsystem()
 	Data.bEnableFilmMode = bEnableFilmMode;
 	Data.FilmBlackBarAmount = FilmBlackBarAmount;
 	Data.FilmGradingAmount = FilmGradingAmount;
+	Data.RenderTargetOpacity = RenderTargetOpacity;
 
 	Subsystem->SetSelectActorData(Data);
 }

@@ -112,9 +112,15 @@ void ACutActor::InitializeSnapshot()
 
 void ACutActor::SetCaptureActive(bool bActive)
 {
+	if (bActive && IsActorTickEnabled() && CaptureComponent2D->bCaptureEveryFrame && bMirrorWorld && bHasPreviousPlayerView)
+	{
+		return;
+	}
+
 	SetActorTickEnabled(bActive);
 	CaptureComponent2D->bCaptureEveryFrame = bActive;
 	CaptureComponent2D->bCaptureOnMovement = false;
+	bMirrorWorld = bActive;
 	bHasPreviousPlayerView = false;
 	if (bActive)
 	{
@@ -245,6 +251,12 @@ void ACutActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if (!bSnapshotInitialized) return;
+	const UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this);
+	if (!Context || !Context->GetFilmMode() || Context->GetActiveCutActor() != this)
+	{
+		SetCaptureActive(false);
+		return;
+	}
 	const APlayerCameraManager* Camera = UGameplayStatics::GetPlayerCameraManager(this, 0);
 	if (!Camera) { bHasPreviousPlayerView = false; return; }
 	const FMinimalViewInfo& View = Camera->GetCameraCacheView();

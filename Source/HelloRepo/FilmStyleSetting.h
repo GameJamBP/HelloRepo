@@ -62,6 +62,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmMode|Subsystem Transition", meta = (DisplayName = "GH (G=Grading Out Delay, H=Out Duration Sec)"))
 	FVector2D GH = FVector2D(0.0, 1.0);
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmMode|Subsystem Transition", meta = (DisplayName = "RT Opacity In Timing (X=In Delay, Y=In Duration Sec)"))
+	FVector2D RTOpacityInTiming = FVector2D(0.0, 1.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmMode|Subsystem Transition", meta = (DisplayName = "RT Opacity Out Timing (X=Out Delay, Y=Out Duration Sec)"))
+	FVector2D RTOpacityOutTiming = FVector2D(0.0, 1.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FilmMode|Subsystem Transition", meta = (DisplayName = "RT Opacity Values (X=Before FilmMode, Y=In FilmMode)"))
+	FVector2D RTOpacityRange = FVector2D(1.0, 0.75);
+
 	/** Push this FilmStyleSetting's current state through UFilmStyleSubsystem::SetSelectActorData(). */
 	UFUNCTION(BlueprintCallable, Category = "FilmStyleSetting|Subsystem")
 	void SyncStateToSubsystem();
@@ -83,6 +92,9 @@ private:
 
 	TWeakObjectPtr<ACutActor> LastActiveCutActor;
 	TWeakObjectPtr<UTextureRenderTarget2D> LastActiveCutRenderTarget;
+
+	float FadeInStartRTOpacity = 1.0f;
+	float FadeOutStartRTOpacity = 1.0f;
 
 	void UpdateFilmModeTransition(float DeltaSeconds, bool bSubsystemFilmMode);
 	static float ComputeTransitionAlpha(float ElapsedTime, const FVector2D& TimingVec);
