@@ -2,7 +2,6 @@
 
 #include "Camera/PlayerCameraManager.h"
 #include "Components/SceneCaptureComponent2D.h"
-#include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
@@ -43,8 +42,11 @@ ACutActor::ACutActor()
 
 void ACutActor::BeginPlay()
 {
-	GetWorld()->GetSubsystem<UFilmStyleSubsystem>()->CutActors.AddUnique(this);
 	SetCaptureActive(false);
+	if (UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this))
+	{
+		Context->RegisterCutActor(this);
+	}
 	// Super dispatches Blueprint BeginPlay; prepare state before it can activate us.
 	Super::BeginPlay();
 	InitializeSnapshot();
@@ -101,7 +103,8 @@ void ACutActor::InitializeSnapshot()
 	bSnapshotInitialized = true;
 	// Queue with the main view so its final post-process settings are available.
 	CaptureComponent2D->CaptureSceneDeferred();
-	if (GetWorld()->GetSubsystem<UFilmStyleSubsystem>()->ActiveCutActor == this)
+	if (const UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this);
+		Context && Context->GetActiveCutActor() == this)
 	{
 		RefreshCutConsumers(GetWorld());
 	}
@@ -126,32 +129,24 @@ void ACutActor::SetCaptureActive(bool bActive)
 
 void ACutActor::SetActiveCutActor()
 {
-	if (!HasActorBegunPlay() && !IsActorBeginningPlay()) return;
-	UFilmStyleSubsystem* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
-	Context->CutActors.RemoveAll([](const TObjectPtr<ACutActor>& Actor) { return !IsValid(Actor); });
-	Context->CutActors.AddUnique(this);
-	for (ACutActor* Actor : Context->CutActors) Actor->SetCaptureActive(Actor == this);
-	Context->ActiveCutActor = this;
-	// Allocate the texture immediately if the viewport is ready; camera snapshot
-	// initialization may still be waiting for its first camera update.
-	UpdateRenderTarget();
-	RefreshCutConsumers(GetWorld());
+	if (UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this))
+	{
+		Context->SetActiveCutActor(this);
+	}
 }
 
 void ACutActor::ClearActive(const UObject* WorldContextObject)
 {
-	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
-	if (!World) return;
-	UFilmStyleSubsystem* Context = World->GetSubsystem<UFilmStyleSubsystem>();
-	if (IsValid(Context->ActiveCutActor)) Context->ActiveCutActor->SetCaptureActive(false);
-	Context->ActiveCutActor = nullptr;
-	RefreshCutConsumers(World);
+	if (UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(WorldContextObject))
+	{
+		Context->SetActiveCutActor(nullptr);
+	}
 }
 
 bool ACutActor::TeleportPlayerToCapture()
 {
-	const UFilmStyleSubsystem* Context = GetWorld() ? GetWorld()->GetSubsystem<UFilmStyleSubsystem>() : nullptr;
-	if (!Context || !Context->bFilmMode || GetWorldTimerManager().IsTimerActive(CleanupTimer)) return false;
+	const UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this);
+	if (!Context || !Context->GetFilmMode() || GetWorldTimerManager().IsTimerActive(CleanupTimer)) return false;
 
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
@@ -215,35 +210,35 @@ void ACutActor::CleanupAfterTeleport()
 {
 	GetWorldTimerManager().ClearTimer(CleanupTimer);
 	UWorld* World = GetWorld();
-	UFilmStyleSubsystem* Context = World->GetSubsystem<UFilmStyleSubsystem>();
+	UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this);
 	if (!Context) return;
 
 	// Retain the actors/snapshots for reuse, but remove all capture activity and context.
-	for (ACutActor* Cut : Context->CutActors)
+	for (ACutActor* Cut : Context->GetCutActors())
 	{
 		if (IsValid(Cut)) Cut->SetCaptureActive(false);
 	}
-	if (IsValid(Context->ActiveCutActor)) Context->ActiveCutActor->SetCaptureActive(false);
 	SetCaptureActive(false);
-	Context->ActiveCutActor = nullptr;
-	Context->CutActors.Reset();
 
 	// Switch mode before clearing the consumer texture, avoiding the solid-color fallback.
 	USelectOutlineBlueprintLibrary::SetFilmMaskMode(World, ESelectFilmMaskMode::Checkerboard, true);
 	for (TActorIterator<AFilmStyleSetting> It(World); It; ++It)
 	{
 		It->ReplaceTexture = nullptr;
-		It->RefreshActiveCutTexture();
 		It->RefreshOutline();
 		It->SyncStateToSubsystem();
 	}
-	Context->SelectActorData.FilmMaskMode = ESelectFilmMaskMode::Checkerboard;
-	Context->SelectActorData.bEnableFilmMask = true;
+	FSelectActorStateData SelectState = Context->GetSelectActorData();
+	SelectState.FilmMaskMode = ESelectFilmMaskMode::Checkerboard;
+	SelectState.bEnableFilmMask = true;
+	Context->SetSelectActorData(SelectState);
 
 	for (TActorIterator<ASelectableActorShell> It(World); It; ++It)
 	{
 		It->SetActorSelected(false);
 	}
+	// Notify last: listeners may activate another cut without later cleanup overwriting it.
+	Context->ClearCutActors();
 }
 
 void ACutActor::Tick(float DeltaSeconds)
@@ -271,10 +266,9 @@ void ACutActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorldTimerManager().ClearTimer(InitializationTimer);
 	GetWorldTimerManager().ClearTimer(CleanupTimer);
 	SetCaptureActive(false);
-	if (UFilmStyleSubsystem* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>())
+	if (UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this))
 	{
-		Context->CutActors.Remove(this);
-		if (Context->ActiveCutActor == this) Context->ActiveCutActor = nullptr;
+		Context->UnregisterCutActor(this);
 	}
 	Super::EndPlay(EndPlayReason);
 }

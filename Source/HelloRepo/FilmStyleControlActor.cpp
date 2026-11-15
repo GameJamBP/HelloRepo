@@ -3,11 +3,13 @@
 #include "FilmStyleSubsystem.h"
 #include "SelectableActorShell.h"
 #include "CutActor.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/Class.h"
 
 AFilmStyleControlActor::AFilmStyleControlActor()
 {
@@ -34,7 +36,7 @@ void AFilmStyleControlActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	auto* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
+	auto* Context = UFilmStyleSubsystem::Get(this);
 	auto* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (!Context)
 	{
@@ -107,7 +109,7 @@ void AFilmStyleControlActor::CancelSelection()
 
 void AFilmStyleControlActor::ToggleFilmMask()
 {
-	auto* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
+	auto* Context = UFilmStyleSubsystem::Get(this);
 	if (!Context || !IsValid(FilmStyleSetting))
 	{
 		return;
@@ -117,7 +119,7 @@ void AFilmStyleControlActor::ToggleFilmMask()
 	if (FilmStyleSetting->FilmMaskMode == ESelectFilmMaskMode::Checkerboard)
 	{
 		// Preserve the current Cut when toggling back from checkerboard.
-		Mode = IsValid(Context->ActiveCutActor)
+		Mode = IsValid(Context->GetActiveCutActor())
 			? ESelectFilmMaskMode::RenderTarget
 			: ESelectFilmMaskMode::SolidColor;
 	}
@@ -139,19 +141,36 @@ void AFilmStyleControlActor::PreviousCut()
 
 void AFilmStyleControlActor::ScrollCut(int32 Direction)
 {
-	if (!IsValid(FilmStyleSetting)
-		|| (FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::RenderTarget && FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::SolidColor))
+	if (!IsValid(FilmStyleSetting))
 	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 5.f, FColor::Red,
+				FString::Printf(TEXT("[%s] ScrollCut stopped: FilmStyleSetting is invalid."), *GetName()));
+		}
 		return;
 	}
 
-	auto* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
+	if (FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::RenderTarget && FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::SolidColor)
+	{
+		if (GEngine)
+		{
+			const int32 ModeValue = static_cast<int32>(FilmStyleSetting->FilmMaskMode);
+			const FString ModeName = StaticEnum<ESelectFilmMaskMode>()->GetNameStringByValue(ModeValue);
+			GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 5.f, FColor::Yellow,
+				FString::Printf(TEXT("[%s] ScrollCut stopped: FilmMaskMode=%s (%d). Expected RenderTarget or SolidColor."),
+					*GetName(), *ModeName, ModeValue));
+		}
+		return;
+	}
+
+	auto* Context = UFilmStyleSubsystem::Get(this);
 	if (!Context)
 	{
 		return;
 	}
 	TArray<ACutActor*> Cuts;
-	for (auto Cut : Context->CutActors)
+	for (auto Cut : Context->GetCutActors())
 	{
 		if (IsValid(Cut))
 		{
@@ -159,25 +178,44 @@ void AFilmStyleControlActor::ScrollCut(int32 Direction)
 		}
 	}
 
-	ActiveCutIndex = Cuts.IndexOfByKey(Context->ActiveCutActor.Get());
-	ActiveCutIndex = (ActiveCutIndex + 1 + Direction + Cuts.Num() + 1) % (Cuts.Num() + 1) - 1;
-	if (ActiveCutIndex == -1)
+	const int32 CutCount = Cuts.Num();
+	if (CutCount == 0)
 	{
-		ACutActor::ClearActive(this);
+		ActiveCutIndex = INDEX_NONE;
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 5.f, FColor::Yellow,
+				FString::Printf(TEXT("[%s] ScrollCut stopped: no valid cuts (CutCount=0)."), *GetName()));
+		}
+		return;
 	}
-	else
-	{
-		Cuts[ActiveCutIndex]->SetActiveCutActor();
-	}
+	if (Direction == 0) return;
 
-	FilmStyleSetting->SetFilmMaskMode(ActiveCutIndex == -1 ? ESelectFilmMaskMode::SolidColor : ESelectFilmMaskMode::RenderTarget);
-	FilmStyleSetting->RefreshActiveCutTexture();
+	const int32 CurrentCutIndex = Cuts.IndexOfByKey(Context->GetActiveCutActor());
+	const int32 Step = Direction > 0 ? 1 : -1;
+	// An unselected cut enters at the first/last photo; cycling has no empty slot.
+	ActiveCutIndex = CurrentCutIndex == INDEX_NONE
+		? (Step > 0 ? 0 : CutCount - 1)
+		: (CurrentCutIndex + Step + CutCount) % CutCount;
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 5.f, FColor::Cyan,
+			FString::Printf(TEXT("[%s] ScrollCut request: CutCount=%d, CurrentIndex=%d, NextIndex=%d, Step=%d."),
+				*GetName(), CutCount, CurrentCutIndex, ActiveCutIndex, Step));
+	}
+	Cuts[ActiveCutIndex]->SetActiveCutActor();
+
+	if (IsValid(FilmStyleSetting))
+	{
+		FilmStyleSetting->SetFilmMaskMode(ESelectFilmMaskMode::RenderTarget);
+		FilmStyleSetting->RefreshActiveCutTexture();
+	}
 }
 
 void AFilmStyleControlActor::EndPlay(const EEndPlayReason::Type Reason)
 {
 	CancelSelection();
-	if (auto* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>())
+	if (auto* Context = UFilmStyleSubsystem::Get(this))
 	{
 		Context->SetTemporaryActiveActor(nullptr);
 	}

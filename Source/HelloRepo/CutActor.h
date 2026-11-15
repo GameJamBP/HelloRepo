@@ -7,6 +7,7 @@
 class USceneCaptureComponent2D;
 class UTextureRenderTarget2D;
 class APlayerCameraManager;
+class UFilmStyleSubsystem;
 
 /** Owns a frozen camera snapshot until explicitly activated. */
 UCLASS(Blueprintable)
@@ -34,7 +35,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cut")
 	void SetActiveCutActor();
 
-	/** Move the local player's view onto this capture. Requires Subsystem.bFilmMode. */
+	/** Move the local player's view onto this capture. Requires Subsystem.GetFilmMode(). */
 	UFUNCTION(BlueprintCallable, Category = "Cut")
 	bool TeleportPlayerToCapture();
 
@@ -46,6 +47,8 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	friend class UFilmStyleSubsystem;
+
 	void CleanupAfterTeleport();
 	void SetCaptureActive(bool bActive);
 	bool UpdateRenderTarget();

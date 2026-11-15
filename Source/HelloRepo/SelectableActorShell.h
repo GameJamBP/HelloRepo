@@ -11,10 +11,10 @@ class USceneComponent;
 /**
 	* Actor shell (Actor壳子) with:
 	* - Selection state (bIsSelected: Selected / Unselected), manually updated via UpdateSelectionState() / SetActorSelected()
-	* - SelectActor recording state (bIsSelectActorRecording: Recording / Not Recording, synced from USelectActorSubsystem::bFilmMode)
-	* - Reads FSelectActorStateData from USelectActorSubsystem on Tick:
+	* - SelectActor recording state (bIsSelectActorRecording: Recording / Not Recording, synced from UFilmStyleSubsystem::GetFilmMode())
+	* - Reads FSelectActorStateData through UFilmStyleSubsystem::GetSelectActorData() on Tick:
 	*   1) When Selected + SelectActor is in Checkerboard or RenderTarget state -> all collisions ignore Pawn so the player can pass through freely.
-	*   2) When Selected + bFilmMode is true + SelectActor is in Checkerboard state -> all renderable components become render-invisible.
+	*   2) When Selected + GetFilmMode() is true + SelectActor is in Checkerboard state -> all renderable components become render-invisible.
 	*/
 UCLASS(Blueprintable, meta = (DisplayName = "Selectable Actor Shell"))
 class HELLOREPO_API ASelectableActorShell : public AActor
@@ -45,11 +45,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Shell", meta = (ClampMin = "1", ClampMax = "255"))
 	int32 CustomDepthStencilValue = 1;
 
-	/** SelectActor recording state (SelectActor状态: 录制中 / 没有在被录制中, synced from Subsystem.bFilmMode on Tick). */
+	/** SelectActor recording state (SelectActor状态: 录制中 / 没有在被录制中, synced from UFilmStyleSubsystem::GetFilmMode() on Tick). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Select Shell|State", meta = (DisplayName = "Is SelectActor Recording (bFilmMode)"))
 	bool bIsSelectActorRecording = false;
 
-	/** Latest SelectActor state data read from USelectActorSubsystem on Tick. */
+	/** Latest SelectActor state data read through UFilmStyleSubsystem::GetSelectActorData() on Tick. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Select Shell|State")
 	FSelectActorStateData CachedSelectActorData;
 
@@ -65,7 +65,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Shell|Portal", meta = (ClampMin = "0.1", Units = "cm"))
 	float PlayerContactMargin = 2.f;
 
-	/** True when renderable components on this Actor are currently hidden due to bFilmMode + Checkerboard. */
+	/** True when renderable components on this Actor are currently hidden due to GetFilmMode() + Checkerboard. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Select Shell|State")
 	bool bAreRenderablesHiddenByFilmMode = false;
 
@@ -85,7 +85,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Select Shell")
 	bool IsActorSelected() const { return bIsSelected; }
 
-	/** Returns whether SelectActor is currently in recording mode (Subsystem.bFilmMode == true). */
+	/** Returns whether SelectActor is currently in recording mode (UFilmStyleSubsystem::GetFilmMode() == true). */
 	UFUNCTION(BlueprintPure, Category = "Select Shell")
 	bool IsSelectActorRecording() const { return bIsSelectActorRecording; }
 

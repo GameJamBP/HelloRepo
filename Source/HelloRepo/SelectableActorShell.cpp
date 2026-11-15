@@ -48,10 +48,10 @@ void ASelectableActorShell::Tick(float DeltaTime)
 		return;
 	}
 
-	if (const UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+	if (const UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this))
 	{
-		CachedSelectActorData = Subsystem->SelectActorData;
-		bIsSelectActorRecording = Subsystem->bFilmMode;
+		CachedSelectActorData = Subsystem->GetSelectActorData();
+		bIsSelectActorRecording = Subsystem->GetFilmMode();
 	}
 	else
 	{
@@ -74,8 +74,8 @@ void ASelectableActorShell::CheckPlayerPortalContact()
 		return;
 	}
 
-	UFilmStyleSubsystem* Context = GetWorld()->GetSubsystem<UFilmStyleSubsystem>();
-	if (!Context || !Context->bFilmMode)
+	UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this);
+	if (!Context || !Context->GetFilmMode())
 	{
 		PlayerPortalStatus = TEXT("Teleport disabled: FilmMode is off");
 		// Do not sweep movement accumulated while teleporting was disabled.
@@ -85,7 +85,7 @@ void ASelectableActorShell::CheckPlayerPortalContact()
 	}
 	APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
 	UPrimitiveComponent* PlayerCollision = Player ? Cast<UPrimitiveComponent>(Player->GetRootComponent()) : nullptr;
-	ACutActor* Cut = Context ? Context->ActiveCutActor.Get() : nullptr;
+	ACutActor* Cut = Context ? Context->GetActiveCutActor() : nullptr;
 	// Selection, FilmMode and an active destination are required; visual mask state is independent.
 	if (!PlayerCollision || !IsValid(Cut))
 	{

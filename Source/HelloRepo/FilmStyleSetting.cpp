@@ -28,9 +28,9 @@ void AFilmStyleSetting::BeginPlay()
 
 	if (UWorld* World = GetWorld())
 	{
-		if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+		if (UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this))
 		{
-			UpdateFilmModeTransition(0.0f, Subsystem->bFilmMode);
+			UpdateFilmModeTransition(0.0f, Subsystem->GetFilmMode());
 		}
 	}
 
@@ -41,9 +41,9 @@ void AFilmStyleSetting::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UWorld* World = GetWorld())
 	{
-		if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+		if (UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this))
 		{
-			Subsystem->SelectActorData = FSelectActorStateData{};
+			Subsystem->SetSelectActorData(FSelectActorStateData{});
 		}
 	}
 
@@ -54,9 +54,9 @@ void AFilmStyleSetting::Destroyed()
 {
 	if (UWorld* World = GetWorld())
 	{
-		if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+		if (UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this))
 		{
-			Subsystem->SelectActorData = FSelectActorStateData{};
+			Subsystem->SetSelectActorData(FSelectActorStateData{});
 		}
 	}
 
@@ -73,13 +73,13 @@ void AFilmStyleSetting::Tick(float DeltaSeconds)
 		return;
 	}
 
-	if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+	if (UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this))
 	{
 		RefreshActiveCutTexture();
 
-		if (World->IsGameWorld() || Subsystem->bFilmMode || bWasSubsystemFilmMode || bIsFadingOutFilmMode)
+		if (World->IsGameWorld() || Subsystem->GetFilmMode() || bWasSubsystemFilmMode || bIsFadingOutFilmMode)
 		{
-			UpdateFilmModeTransition(DeltaSeconds, Subsystem->bFilmMode);
+			UpdateFilmModeTransition(DeltaSeconds, Subsystem->GetFilmMode());
 		}
 
 		SyncStateToSubsystem();
@@ -181,7 +181,7 @@ void AFilmStyleSetting::SyncStateToSubsystem()
 		return;
 	}
 
-	UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>();
+	UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this);
 	if (!Subsystem)
 	{
 		return;
@@ -198,16 +198,16 @@ void AFilmStyleSetting::SyncStateToSubsystem()
 	Data.FilmBlackBarAmount = FilmBlackBarAmount;
 	Data.FilmGradingAmount = FilmGradingAmount;
 
-	Subsystem->SelectActorData = Data;
+	Subsystem->SetSelectActorData(Data);
 }
 
 void AFilmStyleSetting::RefreshActiveCutTexture()
 {
 	UWorld* World = GetWorld();
 	if (!World || HasAnyFlags(RF_ClassDefaultObject)) return;
-	if (UFilmStyleSubsystem* Subsystem = World->GetSubsystem<UFilmStyleSubsystem>())
+	if (UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this))
 	{
-		ACutActor* ActiveCutActor = IsValid(Subsystem->ActiveCutActor) ? Subsystem->ActiveCutActor.Get() : nullptr;
+		ACutActor* ActiveCutActor = IsValid(Subsystem->GetActiveCutActor()) ? Subsystem->GetActiveCutActor() : nullptr;
 		UTextureRenderTarget2D* ActiveRenderTarget = ActiveCutActor ? ActiveCutActor->RenderTarget.Get() : nullptr;
 		const TWeakObjectPtr<ACutActor> CurrentActor(ActiveCutActor);
 		const TWeakObjectPtr<UTextureRenderTarget2D> CurrentRenderTarget(ActiveRenderTarget);

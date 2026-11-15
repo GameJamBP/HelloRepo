@@ -8,16 +8,13 @@
 class ACutActor;
 class ASelectableActorShell;
 
-/**
-	* Snapshot of SelectActor state stored inside USelectActorSubsystem.
-	* Written by ASubsystemSelectActor and read by ASelectableActorShell on Tick.
-	*/
+/** Snapshot written by AFilmStyleSetting and read by selectable actors. */
 USTRUCT(BlueprintType)
 struct HELLOREPO_API FSelectActorStateData
 {
 	GENERATED_BODY()
 
-	/** Whether an active ASubsystemSelectActor is currently writing to this struct. */
+	/** Whether an active AFilmStyleSetting is currently writing to this struct. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select State")
 	bool bHasValidSelectActor = false;
 
@@ -72,49 +69,104 @@ struct HELLOREPO_API FSelectActorStateData
 	}
 };
 
-/**
-	* World Subsystem that pure-stores shared state between ASubsystemSelectActor and ASelectableActorShell.
-	* Does not hold direct actor logic; ASubsystemSelectActor and ASelectableActorShell read/write data here.
-	*/
-UCLASS(DisplayName = "Select Actor Subsystem")
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleActiveCutActorChanged,
+	ACutActor*, PreviousCutActor, ACutActor*, NewCutActor);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleActiveCutActorChangedNative, ACutActor*, ACutActor*);
+
+/** Owns the world's shared film-style state and active-cut transitions. */
+UCLASS(BlueprintType, DisplayName = "Film Style Subsystem")
 class HELLOREPO_API UFilmStyleSubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()
 
 public:
-	/** Context only; registration and activation are owned by ACutActor. */
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Cut")
-	TArray<TObjectPtr<ACutActor>> CutActors;
+	/** Resolve the subsystem in the context object's world; returns null without a valid world. */
+	UFUNCTION(BlueprintPure, Category = "Film Style", meta = (WorldContext = "WorldContextObject", DisplayName = "Get Film Style Subsystem"))
+	static UFilmStyleSubsystem* Get(const UObject* WorldContextObject);
 
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Cut")
-	TObjectPtr<ACutActor> ActiveCutActor;
+	/** Read-only native view of the latest three unique registrations. */
+	const TArray<TObjectPtr<ACutActor>>& GetCutActors() const { return CutActors; }
 
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Selection")
-	TWeakObjectPtr<ASelectableActorShell> TemporaryActiveActor;
+	/** Blueprint-compatible copy; UObject pointer wrappers cannot be exposed in UFUNCTIONs. */
+	UFUNCTION(BlueprintGetter, Category = "Film Style|Cut", meta = (DisplayName = "Get Cut Actors"))
+	TArray<ACutActor*> GetCutActorsForBlueprint() const;
 
+	/** Replace the cuts, retaining the last three valid unique actors from this world. */
+	UFUNCTION(BlueprintSetter, Category = "Film Style|Cut")
+	void SetCutActors(const TArray<ACutActor*>& InCutActors);
+
+	/** Register a cut, evicting the oldest when full. Re-registering does not change its order. */
+	UFUNCTION(BlueprintCallable, Category = "Film Style|Cut")
+	void RegisterCutActor(ACutActor* Actor);
+
+	/** Removing the active cut also clears it and broadcasts the change. */
+	UFUNCTION(BlueprintCallable, Category = "Film Style|Cut")
+	void UnregisterCutActor(ACutActor* Actor);
+
+	UFUNCTION(BlueprintCallable, Category = "Film Style|Cut")
+	void ClearCutActors();
+
+	UFUNCTION(BlueprintGetter, Category = "Film Style|Cut")
+	ACutActor* GetActiveCutActor() const { return ActiveCutActor.Get(); }
+
+	/** Switch capture/texture state before notifying listeners. Null clears the active cut. */
+	UFUNCTION(BlueprintSetter, Category = "Film Style|Cut")
+	void SetActiveCutActor(ACutActor* Actor);
+
+	/** Native listeners may use AddUObject/AddLambda and retain the returned delegate handle. */
+	FOnFilmStyleActiveCutActorChangedNative& GetOnActiveCutActorChangedNative() { return ActiveCutActorChangedNative; }
+
+	UFUNCTION(BlueprintPure, Category = "Film Style|Selection")
+	ASelectableActorShell* GetTemporaryActiveActor() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Film Style|Selection")
 	void SetTemporaryActiveActor(ASelectableActorShell* Actor);
 
-	/** Struct holding the current SelectActor state written by ASubsystemSelectActor. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Subsystem")
-	FSelectActorStateData SelectActorData;
-
-	/** Whether FilmMode (录制模式) is enabled. When true, ASubsystemSelectActor enables FilmMode and interpolates AB/CD. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Subsystem")
-	bool bFilmMode = false;
-
-	/** Set bFilmMode (录制状态) in the subsystem. */
-	UFUNCTION(BlueprintCallable, Category = "Select Subsystem")
+	/** Drives the film-mode transition and gameplay state. */
+	UFUNCTION(BlueprintSetter, Category = "Film Style")
 	void SetFilmMode(bool bInFilmMode);
 
-	/** Get bFilmMode (录制状态) from the subsystem. */
-	UFUNCTION(BlueprintPure, Category = "Select Subsystem")
+	UFUNCTION(BlueprintGetter, Category = "Film Style")
 	bool GetFilmMode() const { return bFilmMode; }
 
-	/** Write SelectActor state data into the subsystem. */
-	UFUNCTION(BlueprintCallable, Category = "Select Subsystem")
+	UFUNCTION(BlueprintSetter, Category = "Film Style")
 	void SetSelectActorData(const FSelectActorStateData& InData);
 
-	/** Read SelectActor state data from the subsystem. */
-	UFUNCTION(BlueprintPure, Category = "Select Subsystem")
+	UFUNCTION(BlueprintGetter, Category = "Film Style")
 	const FSelectActorStateData& GetSelectActorData() const { return SelectActorData; }
+
+private:
+	static constexpr int32 MaxCutActors = 3;
+
+	void RunCutStateChange(TFunction<void()> Change);
+	void ApplyCutActors(const TArray<TWeakObjectPtr<ACutActor>>& Actors);
+	void ApplyRegisterCutActor(ACutActor* Actor);
+	void TrimCutActorsToLimit();
+	void ApplyActiveCutActor(ACutActor* Actor);
+	void RefreshActiveCutConsumers();
+
+	UPROPERTY(Transient, BlueprintGetter = GetCutActorsForBlueprint, BlueprintSetter = SetCutActors, Category = "Film Style|Cut", meta = (AllowPrivateAccess = "true"))
+	TArray<TObjectPtr<ACutActor>> CutActors;
+
+	UPROPERTY(Transient, BlueprintGetter = GetActiveCutActor, BlueprintSetter = SetActiveCutActor, Category = "Film Style|Cut", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ACutActor> ActiveCutActor;
+
+	// Keep weak ownership; Blueprint access uses the explicit functions above.
+	UPROPERTY(Transient)
+	TWeakObjectPtr<ASelectableActorShell> TemporaryActiveActor;
+
+	UPROPERTY(Transient, BlueprintGetter = GetSelectActorData, BlueprintSetter = SetSelectActorData, Category = "Film Style", meta = (AllowPrivateAccess = "true"))
+	FSelectActorStateData SelectActorData;
+
+	UPROPERTY(Transient, BlueprintGetter = GetFilmMode, BlueprintSetter = SetFilmMode, Category = "Film Style", meta = (AllowPrivateAccess = "true"))
+	bool bFilmMode = false;
+
+	/** Fires once per actual change, after capture and texture state have been synchronized. */
+	UPROPERTY(BlueprintAssignable, Category = "Film Style|Cut", meta = (AllowPrivateAccess = "true"))
+	FOnFilmStyleActiveCutActorChanged OnActiveCutActorChanged;
+
+	FOnFilmStyleActiveCutActorChangedNative ActiveCutActorChangedNative;
+	// Serialize listener requests so both delegate broadcasts see a completed transition.
+	bool bIsChangingCutState = false;
+	TArray<TFunction<void()>> PendingCutStateChanges;
 };
