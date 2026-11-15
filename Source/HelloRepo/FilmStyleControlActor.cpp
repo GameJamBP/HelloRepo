@@ -9,7 +9,6 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
-#include "UObject/Class.h"
 
 AFilmStyleControlActor::AFilmStyleControlActor()
 {
@@ -141,29 +140,6 @@ void AFilmStyleControlActor::PreviousCut()
 
 void AFilmStyleControlActor::ScrollCut(int32 Direction)
 {
-	if (!IsValid(FilmStyleSetting))
-	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 5.f, FColor::Red,
-				FString::Printf(TEXT("[%s] ScrollCut stopped: FilmStyleSetting is invalid."), *GetName()));
-		}
-		return;
-	}
-
-	if (FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::RenderTarget && FilmStyleSetting->FilmMaskMode != ESelectFilmMaskMode::SolidColor)
-	{
-		if (GEngine)
-		{
-			const int32 ModeValue = static_cast<int32>(FilmStyleSetting->FilmMaskMode);
-			const FString ModeName = StaticEnum<ESelectFilmMaskMode>()->GetNameStringByValue(ModeValue);
-			GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 5.f, FColor::Yellow,
-				FString::Printf(TEXT("[%s] ScrollCut stopped: FilmMaskMode=%s (%d). Expected RenderTarget or SolidColor."),
-					*GetName(), *ModeName, ModeValue));
-		}
-		return;
-	}
-
 	auto* Context = UFilmStyleSubsystem::Get(this);
 	if (!Context)
 	{
@@ -182,11 +158,6 @@ void AFilmStyleControlActor::ScrollCut(int32 Direction)
 	if (CutCount == 0)
 	{
 		ActiveCutIndex = INDEX_NONE;
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 5.f, FColor::Yellow,
-				FString::Printf(TEXT("[%s] ScrollCut stopped: no valid cuts (CutCount=0)."), *GetName()));
-		}
 		return;
 	}
 	if (Direction == 0) return;
@@ -197,19 +168,8 @@ void AFilmStyleControlActor::ScrollCut(int32 Direction)
 	ActiveCutIndex = CurrentCutIndex == INDEX_NONE
 		? (Step > 0 ? 0 : CutCount - 1)
 		: (CurrentCutIndex + Step + CutCount) % CutCount;
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), 5.f, FColor::Cyan,
-			FString::Printf(TEXT("[%s] ScrollCut request: CutCount=%d, CurrentIndex=%d, NextIndex=%d, Step=%d."),
-				*GetName(), CutCount, CurrentCutIndex, ActiveCutIndex, Step));
-	}
-	Cuts[ActiveCutIndex]->SetActiveCutActor();
-
-	if (IsValid(FilmStyleSetting))
-	{
-		FilmStyleSetting->SetFilmMaskMode(ESelectFilmMaskMode::RenderTarget);
-		FilmStyleSetting->RefreshActiveCutTexture();
-	}
+	// The subsystem synchronizes Cut textures; film mask mode is controlled separately.
+	Context->SetActiveCutActor(Cuts[ActiveCutIndex]);
 }
 
 void AFilmStyleControlActor::EndPlay(const EEndPlayReason::Type Reason)

@@ -16,7 +16,6 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
-#include "InputCoreTypes.h"
 #include "Materials/MaterialInterface.h"
 #include "FilmStyleSubsystem.h"
 #include "HelloRepo.h"
@@ -118,18 +117,6 @@ void AHelloRepoCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AHelloRepoCharacter::Look);
-
-		if (PhotoModeAction)
-		{
-			EnhancedInputComponent->BindAction(PhotoModeAction, ETriggerEvent::Started, this, &AHelloRepoCharacter::TogglePhotoMode);
-			UE_LOG(LogHelloRepo, Log, TEXT("%s bound PhotoModeAction (%s)."), *GetNameSafe(this), *GetNameSafe(PhotoModeAction));
-		}
-		else
-		{
-			FInputKeyBinding& PhotoModeBinding = PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AHelloRepoCharacter::TogglePhotoMode);
-			PhotoModeBinding.bConsumeInput = false;
-			UE_LOG(LogHelloRepo, Log, TEXT("%s bound F key (IE_Pressed, bConsumeInput=false) to TogglePhotoMode."), *GetNameSafe(this));
-		}
 	}
 	else
 	{
@@ -155,6 +142,7 @@ void AHelloRepoCharacter::SetPhotoMode(bool bEnabled)
 		}
 	}
 
+	const bool bPhotoModeChanged = bIsPhotoMode != bEnabled;
 	bIsPhotoMode = bEnabled;
 	SetViewfinderOverlayActive(bIsPhotoMode);
 
@@ -163,6 +151,10 @@ void AHelloRepoCharacter::SetPhotoMode(bool bEnabled)
 	ApplyCameraViewTransform();
 	NotifyCameraCut();
 	UE_LOG(LogHelloRepo, Log, TEXT("%s SetPhotoMode(%d) applied -> Alpha=%.3f"), *GetNameSafe(this), bIsPhotoMode ? 1 : 0, CameraViewAlpha);
+	if (bPhotoModeChanged)
+	{
+		OnPhotoModeChanged(bIsPhotoMode);
+	}
 }
 
 void AHelloRepoCharacter::InitializeCameraViewRig()

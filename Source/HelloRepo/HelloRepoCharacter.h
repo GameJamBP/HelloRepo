@@ -52,10 +52,6 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* MouseLookAction;
 
-	/** Optional Enhanced Input Action for toggling Photo Mode. If unset, defaults to binding the F key directly. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Input")
-	TObjectPtr<UInputAction> PhotoModeAction;
-
 	/** Name of the Blueprint/Actor SceneComponent used as the third-person camera anchor. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Camera|ViewTransition")
 	FName TPSPointComponentName = TEXT("TPSPoint");
@@ -80,7 +76,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Camera|PhotoMode")
 	TSoftObjectPtr<UMaterialInterface> ViewfinderPostProcessMaterial;
 
-	/** Whether Photo Mode (F key toggle) is currently active. */
+	/** Whether Photo Mode is currently active. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Camera|PhotoMode")
 	bool bIsPhotoMode = false;
 
@@ -122,6 +118,10 @@ public:
 	/** Enter or exit Photo Mode immediately. */
 	UFUNCTION(BlueprintCallable, Category="Camera|PhotoMode")
 	void SetPhotoMode(bool bEnabled);
+
+	/** Called after Photo Mode changes and its camera/overlay updates have been applied. */
+	UFUNCTION(BlueprintImplementableEvent, Category="Camera|PhotoMode")
+	void OnPhotoModeChanged(bool bPhotoModeEnabled);
 
 	/** Returns true while Photo Mode is active. */
 	UFUNCTION(BlueprintPure, Category="Camera|PhotoMode")

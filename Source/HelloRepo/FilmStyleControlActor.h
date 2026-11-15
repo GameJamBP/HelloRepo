@@ -51,6 +51,7 @@ public:
 	void PreviousCut();
 
 private:
+	/** Cycle registered Cuts independently of film mask settings. */
 	void ScrollCut(int32 Direction);
 
 	// Input runs before the camera update; apply clicks after this frame's trace.

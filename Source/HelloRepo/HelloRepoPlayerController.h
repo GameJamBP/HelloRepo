@@ -11,6 +11,7 @@ class UUserWidget;
 class UHelloRepoInputComponent;
 class UHelloRepoInputConfig;
 class AFilmStyleControlActor;
+class ACutActor;
 
 /**
  *  Basic PlayerController class for a third person game
@@ -64,6 +65,14 @@ protected:
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;
 
+	/** Called after the input successfully spawns and activates a CutActor. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Input|Film Style")
+	void OnCutActorSpawned(ACutActor* CutActor);
+
+	/** Called after the input changes Film Mode; receives the resulting state. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Input|Film Style")
+	void OnFilmModeChanged(bool bFilmMode);
+
 private:
 	void BindFilmStyleInput();
 	void ClearFilmStyleInputBindings();
@@ -73,8 +82,11 @@ private:
 	void Input_SelectCompleted();
 	void Input_SelectCanceled();
 	void Input_ToggleFilmMask();
+	void Input_TogglePhotoMode();
 	void Input_NextCut();
 	void Input_PreviousCut();
+	void Input_SpawnCutActor();
+	void Input_ChangeFilmMode();
 
 	TWeakObjectPtr<UHelloRepoInputComponent> BoundFilmStyleInputComponent;
 	TWeakObjectPtr<AFilmStyleControlActor> SelectionControlActor;
