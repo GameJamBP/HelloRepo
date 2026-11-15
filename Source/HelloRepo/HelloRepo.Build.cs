@@ -32,7 +32,8 @@ public class HelloRepo : ModuleRules
 				"UnrealEd",
 				"AnimGraph",
 				"BlueprintGraph",
-				"AssetRegistry"
+				"AssetRegistry",
+				"UMGEditor"
 			});
 		}
 

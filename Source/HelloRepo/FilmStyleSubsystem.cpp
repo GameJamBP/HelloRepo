@@ -37,6 +37,8 @@ void UFilmStyleSubsystem::SetCutActors(const TArray<ACutActor*>& InCutActors)
 
 void UFilmStyleSubsystem::ApplyCutActors(const TArray<TWeakObjectPtr<ACutActor>>& Actors)
 {
+	const TArray<TObjectPtr<ACutActor>> PreviousCutActors = CutActors;
+
 	TArray<TObjectPtr<ACutActor>> NewActors;
 	NewActors.Reserve(Actors.Num());
 	for (const TWeakObjectPtr<ACutActor>& WeakActor : Actors)
@@ -56,6 +58,10 @@ void UFilmStyleSubsystem::ApplyCutActors(const TArray<TWeakObjectPtr<ACutActor>>
 	}
 	CutActors = MoveTemp(NewActors);
 	TrimCutActorsToLimit();
+	if (CutActors != PreviousCutActors)
+	{
+		CutActorsChangedNative.Broadcast();
+	}
 	if (ActiveCutActor && !CutActors.Contains(ActiveCutActor))
 	{
 		ApplyActiveCutActor(nullptr);
@@ -78,9 +84,14 @@ void UFilmStyleSubsystem::RegisterCutActor(ACutActor* Actor)
 void UFilmStyleSubsystem::ApplyRegisterCutActor(ACutActor* Actor)
 {
 	if (!IsValid(Actor) || Actor->GetWorld() != GetWorld()) return;
+	const TArray<TObjectPtr<ACutActor>> PreviousCutActors = CutActors;
 	CutActors.RemoveAll([](const TObjectPtr<ACutActor>& Cut) { return !IsValid(Cut); });
 	CutActors.AddUnique(Actor);
 	TrimCutActorsToLimit();
+	if (CutActors != PreviousCutActors)
+	{
+		CutActorsChangedNative.Broadcast();
+	}
 }
 
 void UFilmStyleSubsystem::TrimCutActorsToLimit()
@@ -102,11 +113,16 @@ void UFilmStyleSubsystem::UnregisterCutActor(ACutActor* Actor)
 	const TWeakObjectPtr<ACutActor> ActorToRemove(Actor);
 	RunCutStateChange([this, ActorToRemove]
 	{
+		const TArray<TObjectPtr<ACutActor>> PreviousCutActors = CutActors;
 		// Compare weak identities even when EndPlay has already invalidated the actor.
 		CutActors.RemoveAll([ActorToRemove](const TObjectPtr<ACutActor>& Cut)
 		{
 			return !IsValid(Cut) || TWeakObjectPtr<ACutActor>(Cut.Get()).HasSameIndexAndSerialNumber(ActorToRemove);
 		});
+		if (CutActors != PreviousCutActors)
+		{
+			CutActorsChangedNative.Broadcast();
+		}
 		if (TWeakObjectPtr<ACutActor>(ActiveCutActor.Get()).HasSameIndexAndSerialNumber(ActorToRemove))
 		{
 			ApplyActiveCutActor(nullptr);
@@ -203,16 +219,26 @@ void UFilmStyleSubsystem::RefreshActiveCutConsumers()
 
 void UFilmStyleSubsystem::SetFilmMode(bool bInFilmMode)
 {
+	const bool bChanged = (bFilmMode != bInFilmMode);
 	bFilmMode = bInFilmMode;
 	RunCutStateChange([this]
 	{
 		SyncActiveCutCaptureState();
 	});
+	if (bChanged)
+	{
+		FilmModeChangedNative.Broadcast(bFilmMode);
+	}
 }
 
 void UFilmStyleSubsystem::SetSelectActorData(const FSelectActorStateData& InData)
 {
+	if (SelectActorData == InData)
+	{
+		return;
+	}
 	SelectActorData = InData;
+	SelectActorDataChangedNative.Broadcast(SelectActorData);
 }
 
 void UFilmStyleSubsystem::SetTemporaryActiveActor(ASelectableActorShell* Actor)
@@ -222,11 +248,12 @@ void UFilmStyleSubsystem::SetTemporaryActiveActor(ASelectableActorShell* Actor)
 	{
 		SetTemporaryHoveredPhotoActor(nullptr);
 	}
-	if (TemporaryActiveActor.Get() == Actor)
+	if (!TemporaryActiveActor.IsStale() && TemporaryActiveActor.Get() == Actor)
 	{
 		return;
 	}
-	if (auto* Old = TemporaryActiveActor.Get())
+	ASelectableActorShell* Old = TemporaryActiveActor.Get();
+	if (Old)
 	{
 		Old->SetTemporarilyActive(false);
 	}
@@ -235,6 +262,7 @@ void UFilmStyleSubsystem::SetTemporaryActiveActor(ASelectableActorShell* Actor)
 	{
 		Actor->SetTemporarilyActive(true);
 	}
+	TemporaryActiveActorChangedNative.Broadcast(Old, Actor);
 }
 
 ASelectableActorShell* UFilmStyleSubsystem::GetTemporaryActiveActor() const

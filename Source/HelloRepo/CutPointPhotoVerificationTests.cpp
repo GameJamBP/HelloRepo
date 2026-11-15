@@ -11,8 +11,10 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "EngineUtils.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/Image.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/StaticMeshComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -28,6 +30,8 @@
 #include "HelloRepoPlayerController.h"
 #include "PhotoActor.h"
 #include "PhotoHoverPromptWidget.h"
+#include "PhotoHUDWidget.h"
+#include "SelectableActorShell.h"
 #include "Components/SizeBox.h"
 
 namespace CutPointPhotoVerifyInternal
@@ -108,11 +112,15 @@ namespace CutPointPhotoVerifyInternal
 				UClass* BPPhotoActorClass = LoadClass<APhotoActor>(nullptr, TEXT("/Game/CommonActor/BP_PhotoActor.BP_PhotoActor_C"));
 				UMaterialInterface* PhotoSurfaceMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/CommonActor/M_PhotoSurface.M_PhotoSurface"));
 				SelectAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Select.IA_Select"));
+				ChangePhotoModeAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ChangePhotoMode.IA_ChangePhotoMode"));
+				NextCutAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_NextCut.IA_NextCut"));
 
 				Test->TestNotNull(TEXT("BP_CutPoint_C loaded"), BPCutPointClass);
 				Test->TestNotNull(TEXT("BP_PhotoActor_C loaded"), BPPhotoActorClass);
 				Test->TestNotNull(TEXT("M_PhotoSurface loaded"), PhotoSurfaceMat);
 				Test->TestNotNull(TEXT("IA_Select loaded"), SelectAction.Get());
+				Test->TestNotNull(TEXT("IA_ChangePhotoMode loaded"), ChangePhotoModeAction.Get());
+				Test->TestNotNull(TEXT("IA_NextCut loaded"), NextCutAction.Get());
 				if (!BPCutPointClass || !BPPhotoActorClass || !PhotoSurfaceMat || !SelectAction.IsValid())
 				{
 					return true;
@@ -121,6 +129,7 @@ namespace CutPointPhotoVerifyInternal
 				// Place a brightly lit/colored cube inside the studio view in front of CutPoint.
 				const FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
 				const FRotator CamRot = PC->PlayerCameraManager->GetCameraRotation();
+				OrigCamRotation = CamRot;
 				const FVector CamForward = CamRot.Vector();
 				const FVector CamRight = FRotationMatrix(CamRot).GetScaledAxis(EAxis::Y);
 
@@ -359,6 +368,10 @@ namespace CutPointPhotoVerifyInternal
 						HoverPopup->GetVisibility(), ESlateVisibility::HitTestInvisible);
 					Test->TestEqual(TEXT("Hover popup displays 'Get Cut Clip'"),
 						HoverPopup->GetPromptText().ToString(), FString(TEXT("Get Cut Clip")));
+					Test->TestFalse(TEXT("Hover popup is NOT dimmed before acquisition"),
+						HoverPopup->IsDimmed());
+					Test->TestFalse(TEXT("PhotoActor IsAlreadyAcquiredInCutList() == false initially"),
+						PhotoActor->IsAlreadyAcquiredInCutList());
 
 					if (USizeBox* PopupSizeBox = HoverPopup->GetPopupSizeBox())
 					{
@@ -447,6 +460,21 @@ namespace CutPointPhotoVerifyInternal
 					Subsystem->GetCutActors().Contains(SpawnedCut1.Get()));
 				Test->TestEqual(TEXT("Subsystem ActiveCutActor == SpawnedCut1"),
 					Subsystem->GetActiveCutActor(), SpawnedCut1.Get());
+				Test->TestTrue(TEXT("PhotoActor IsAlreadyAcquiredInCutList() == true after acquisition"),
+					PhotoActor->IsAlreadyAcquiredInCutList());
+				if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+				{
+					Test->TestEqual(TEXT("Hover popup remains HitTestInvisible after acquisition"),
+						HoverPopup->GetVisibility(), ESlateVisibility::HitTestInvisible);
+					Test->TestEqual(TEXT("Hover popup live-updated to 'Already Acquired'"),
+						HoverPopup->GetPromptText().ToString(), FString(TEXT("Already Acquired")));
+					Test->TestTrue(TEXT("Hover popup dimmed/grayed after acquisition"),
+						HoverPopup->IsDimmed());
+					Test->TestEqual(TEXT("Dimmed text color active after acquisition"),
+						HoverPopup->GetActiveTextColor(), HoverPopup->DimmedPromptTextColor);
+					Test->TestEqual(TEXT("Dimmed background color active after acquisition"),
+						HoverPopup->GetActiveBackgroundColor(), HoverPopup->DimmedBackgroundColor);
+				}
 				Test->TestTrue(TEXT("SpawnedCut1 location matches CutPoint"),
 					SpawnedCut1->GetActorLocation().Equals(CutPointLocation, 1.0f));
 				Test->TestTrue(TEXT("SpawnedCut1 rotation matches CutPoint"),
@@ -501,6 +529,15 @@ namespace CutPointPhotoVerifyInternal
 						Subsystem->GetCutActors().Contains(SpawnedCut1.Get()));
 					Test->TestEqual(TEXT("CutActors capped at MaxCutActors = 3"),
 						Subsystem->GetCutActors().Num(), 3);
+					Test->TestFalse(TEXT("PhotoActor IsAlreadyAcquiredInCutList() == false after eviction"),
+						PhotoActor->IsAlreadyAcquiredInCutList());
+					if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+					{
+						Test->TestEqual(TEXT("Hover popup restored to 'Get Cut Clip' after eviction"),
+							HoverPopup->GetPromptText().ToString(), FString(TEXT("Get Cut Clip")));
+						Test->TestFalse(TEXT("Hover popup no longer dimmed after eviction"),
+							HoverPopup->IsDimmed());
+					}
 
 					// Click PhotoActor again after eviction -> must spawn a new CutActor at CutPoint and activate it.
 					InputSys->InjectInputForAction(SelectAction.Get(), FInputActionValue(true), {}, {});
@@ -529,6 +566,16 @@ namespace CutPointPhotoVerifyInternal
 					Test->TestTrue(TEXT("Respawned CutActor preserved CutPoint FOV (60 deg)"),
 						FMath::IsNearlyEqual(SpawnedCut2->CaptureComponent2D->FOVAngle, 60.0f, 0.01f));
 				}
+				SpawnedCut2Weak = SpawnedCut2;
+				Test->TestTrue(TEXT("PhotoActor IsAlreadyAcquiredInCutList() == true for SpawnedCut2"),
+					PhotoActor->IsAlreadyAcquiredInCutList());
+				if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+				{
+					Test->TestEqual(TEXT("Hover popup switched to 'Already Acquired' for SpawnedCut2"),
+						HoverPopup->GetPromptText().ToString(), FString(TEXT("Already Acquired")));
+					Test->TestTrue(TEXT("Hover popup dimmed again for SpawnedCut2"),
+						HoverPopup->IsDimmed());
+				}
 
 				Transition(EStage::VerifyPopupHidesOnUnhover);
 				return false;
@@ -556,6 +603,446 @@ namespace CutPointPhotoVerifyInternal
 					Test->TestEqual(TEXT("Hover popup Collapsed when unhovered"),
 						HoverPopup->GetVisibility(), ESlateVisibility::Collapsed);
 				}
+
+				Transition(EStage::VerifySelectableShellPrompts);
+				return false;
+			}
+
+			case EStage::VerifySelectableShellPrompts:
+			{
+				if (StageTicks == 1)
+				{
+					// Move finished test PhotoActors out of the verified clear corridor and settle the camera looking straight down it.
+					if (PhotoActor.IsValid())
+					{
+						PhotoActor->SetActorEnableCollision(false);
+						PhotoActor->SetActorHiddenInGame(true);
+						PhotoActor->SetActorLocation(FVector(0.0f, 0.0f, -5000.0f));
+					}
+					if (RawPhotoActor.IsValid())
+					{
+						RawPhotoActor->SetActorEnableCollision(false);
+						RawPhotoActor->SetActorHiddenInGame(true);
+						RawPhotoActor->SetActorLocation(FVector(0.0f, 0.0f, -5000.0f));
+					}
+					ShellAimRotation = OrigCamRotation;
+					PC->SetControlRotation(ShellAimRotation);
+					LastShellCamLoc = PC->PlayerCameraManager->GetCameraLocation();
+					LastShellCamRot = PC->PlayerCameraManager->GetCameraRotation();
+					ShellSubStage = 1;
+					return false;
+				}
+
+				if (ShellSubStage == 1)
+				{
+					const FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
+					const FRotator CamRot = PC->PlayerCameraManager->GetCameraRotation();
+					const bool bStableNow = (StageTicks >= 15)
+						&& FVector::DistSquared(CamLoc, LastShellCamLoc) < 0.01f
+						&& CamRot.Equals(LastShellCamRot, 0.02f)
+						&& CamRot.Equals(ShellAimRotation, 1.0f);
+					if (bStableNow)
+					{
+						++ShellStableTicks;
+					}
+					else
+					{
+						ShellStableTicks = 0;
+					}
+					LastShellCamLoc = CamLoc;
+					LastShellCamRot = CamRot;
+
+					if (ShellStableTicks < 5 && StageTicks < 90)
+					{
+						return false;
+					}
+
+					int32 ViewW = 0;
+					int32 ViewH = 0;
+					PC->GetViewportSize(ViewW, ViewH);
+					FVector RayStart = CamLoc;
+					FVector RayDir = CamRot.Vector();
+					if (ViewW > 0 && ViewH > 0)
+					{
+						FVector DeprojStart = FVector::ZeroVector;
+						FVector DeprojDir = FVector::ForwardVector;
+						if (PC->DeprojectScreenPositionToWorld(ViewW * 0.5f, ViewH * 0.5f, DeprojStart, DeprojDir))
+						{
+							RayStart = DeprojStart;
+							RayDir = DeprojDir.GetSafeNormal();
+						}
+					}
+					ShellRayStartSave = RayStart;
+					ShellRayDirSave = RayDir;
+					const FVector ShellLoc = RayStart + RayDir * 350.0f;
+
+					FActorSpawnParameters Params;
+					Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					TestShell = PlayWorld->SpawnActor<ASelectableActorShell>(ASelectableActorShell::StaticClass(),
+						FTransform(FRotator::ZeroRotator, ShellLoc), Params);
+					Test->TestNotNull(TEXT("Spawned TestShell (ASelectableActorShell)"), TestShell.Get());
+					if (!TestShell.IsValid()) return true;
+
+					TestShell->SetActorEnableCollision(true);
+					UStaticMeshComponent* ShellCube = NewObject<UStaticMeshComponent>(TestShell.Get(), TEXT("TestCube"));
+					ShellCube->SetMobility(EComponentMobility::Movable);
+					if (UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")))
+					{
+						ShellCube->SetStaticMesh(CubeMesh);
+					}
+					TestShell->AddInstanceComponent(ShellCube);
+					ShellCube->SetupAttachment(TestShell->GetRootComponent());
+					ShellCube->SetRelativeLocation(FVector::ZeroVector);
+					ShellCube->SetRelativeScale3D(FVector(1.0f));
+					ShellCube->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+					ShellCube->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+					ShellCube->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+					ShellCube->RegisterComponent();
+					ShellCube->RecreatePhysicsState();
+					TestShellCube = ShellCube;
+					TestShell->UpdateSelectionState();
+
+					Setting->SetFilmMaskEnabled(true);
+					Setting->SetFilmMaskMode(ESelectFilmMaskMode::Checkerboard);
+					Setting->SyncStateToSubsystem();
+					ShellSubStage = 2;
+					ShellStepTick = StageTicks;
+					return false;
+				}
+
+				if (ShellSubStage == 2)
+				{
+					UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget();
+					const bool bHoveredShell = (Subsystem->GetTemporaryActiveActor() == TestShell.Get())
+						&& HoverPopup && HoverPopup->IsPromptShowing();
+					if (!bHoveredShell)
+					{
+						if (StageTicks - ShellStepTick >= 60)
+						{
+							int32 VW = 0, VH = 0;
+							PC->GetViewportSize(VW, VH);
+							FVector DStart = FVector::ZeroVector, DDir = FVector::ForwardVector;
+							const bool bDeproj = (VW > 0 && VH > 0) && PC->DeprojectScreenPositionToWorld(VW * 0.5f, VH * 0.5f, DStart, DDir);
+							FHitResult DiagHit;
+							FCollisionQueryParams DiagParams(SCENE_QUERY_STAT(DiagShellTrace), true, ControlActor);
+							DiagParams.AddIgnoredActor(Char);
+							const bool bDiagHit = bDeproj && PlayWorld->LineTraceSingleByChannel(
+								DiagHit, DStart, DStart + DDir * ControlActor->TraceDistance, ControlActor->TraceChannel, DiagParams);
+							FHitResult CompHit;
+							const bool bCompHit = bDeproj && TestShellCube.IsValid() && TestShellCube->LineTraceComponent(
+								CompHit, DStart, DStart + DDir * ControlActor->TraceDistance, DiagParams);
+							Test->AddError(FString::Printf(
+								TEXT("Timed out waiting to hover TestShell (TempActive=%s, View=%dx%d, RayStart=%s, RayDir=%s, DStart=%s, DDir=%s, bHit=%d, HitActor=%s, HitDist=%.1f, bCompHit=%d, CompDist=%.1f, HasMesh=%d, Reg=%d, ColEn=%d, VisResp=%d, CubeLoc=%s, Ext=%s)"),
+								*GetNameSafe(Subsystem->GetTemporaryActiveActor()),
+								VW, VH, *ShellRayStartSave.ToString(), *ShellRayDirSave.ToString(),
+								*DStart.ToString(), *DDir.ToString(), bDiagHit ? 1 : 0,
+								*GetNameSafe(DiagHit.GetActor()), DiagHit.Distance,
+								bCompHit ? 1 : 0, CompHit.Distance,
+								(TestShellCube.IsValid() && TestShellCube->GetStaticMesh()) ? 1 : 0,
+								(TestShellCube.IsValid() && TestShellCube->IsRegistered()) ? 1 : 0,
+								TestShellCube.IsValid() ? (int32)TestShellCube->GetCollisionEnabled() : -1,
+								TestShellCube.IsValid() ? (int32)TestShellCube->GetCollisionResponseToChannel(ECC_Visibility) : -1,
+								TestShellCube.IsValid() ? *TestShellCube->GetComponentLocation().ToString() : TEXT("null"),
+								TestShellCube.IsValid() ? *TestShellCube->Bounds.BoxExtent.ToString() : TEXT("null")));
+							return true;
+						}
+						return false;
+					}
+
+					Test->TestEqual(TEXT("Subsystem TemporaryActiveActor == TestShell"),
+						Subsystem->GetTemporaryActiveActor(), TestShell.Get());
+					Test->TestNull(TEXT("TemporaryHoveredPhotoActor remains null while hovering TestShell"),
+						Subsystem->GetTemporaryHoveredPhotoActor());
+					Test->TestTrue(TEXT("SelectActorData is in Checkerboard state"),
+						Subsystem->GetSelectActorData().IsCheckerboardState());
+
+					Test->TestTrue(TEXT("Shell hover popup showing under Checkerboard"), HoverPopup->IsPromptShowing());
+					Test->TestFalse(TEXT("Shell hover popup NOT dimmed"), HoverPopup->IsDimmed());
+					Test->TestEqual(TEXT("Checkerboard hover prompt reads 'Object Cut Out'"),
+						HoverPopup->GetPromptText().ToString(), FString(TEXT("Object Cut Out")));
+
+					// Switch to SolidColor (with no ActiveCutActor so Setting stays in SolidColor on Tick).
+					Subsystem->SetActiveCutActor(nullptr);
+					Setting->SetFilmMaskEnabled(true);
+					Setting->SetFilmMaskMode(ESelectFilmMaskMode::SolidColor);
+					Setting->SyncStateToSubsystem();
+					ShellSubStage = 3;
+					ShellStepTick = StageTicks;
+					return false;
+				}
+
+				if (ShellSubStage == 3)
+				{
+					if (StageTicks - ShellStepTick < 3)
+					{
+						return false;
+					}
+
+					Test->TestTrue(TEXT("SelectActorData is in SolidColor state"),
+						Subsystem->GetSelectActorData().IsSolidColorState());
+					if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+					{
+						Test->TestEqual(TEXT("SolidColor hover prompt reads 'Please Set a Photo as Background'"),
+							HoverPopup->GetPromptText().ToString(), FString(TEXT("Please Set a Photo as Background")));
+						Test->TestFalse(TEXT("SolidColor hover popup NOT dimmed"), HoverPopup->IsDimmed());
+						if (USizeBox* PopupSizeBox = HoverPopup->GetPopupSizeBox())
+						{
+							const FVector2D LongPopupSize = PopupSizeBox->GetCachedGeometry().GetLocalSize();
+							Test->TestTrue(
+								FString::Printf(TEXT("Long prompt expands width cleanly past 224px (actual=%.1fx%.1f)"),
+									LongPopupSize.X, LongPopupSize.Y),
+								LongPopupSize.X > 224.0f && FMath::IsNearlyEqual(LongPopupSize.Y, 48.0f, 1.0f));
+						}
+					}
+
+					// Switch to RenderTarget with SpawnedCut2 active -> default "Clip Edit".
+					if (SpawnedCut2Weak.IsValid())
+					{
+						SpawnedCut2Weak->SetActiveCutActor();
+					}
+					Setting->SetFilmMaskEnabled(true);
+					Setting->SetFilmMaskMode(ESelectFilmMaskMode::RenderTarget);
+					Setting->SyncStateToSubsystem();
+					ShellSubStage = 4;
+					ShellStepTick = StageTicks;
+					return false;
+				}
+
+				if (ShellSubStage == 4)
+				{
+					if (StageTicks - ShellStepTick < 3)
+					{
+						return false;
+					}
+
+					Test->TestTrue(TEXT("SelectActorData is in RenderTarget state"),
+						Subsystem->GetSelectActorData().IsRenderTargetState());
+					if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+					{
+						Test->TestEqual(TEXT("RenderTarget/edit hover prompt reads 'Clip Edit'"),
+							HoverPopup->GetPromptText().ToString(), FString(TEXT("Clip Edit")));
+						Test->TestFalse(TEXT("Clip Edit hover popup NOT dimmed"), HoverPopup->IsDimmed());
+					}
+
+					// Aim up at the empty studio ceiling to verify unhover hides shell popup cleanly (matches VerifyPopupHidesOnUnhover).
+					PC->SetControlRotation(FRotator(80.0f, 0.0f, 0.0f));
+					ShellSubStage = 5;
+					ShellStepTick = StageTicks;
+					return false;
+				}
+
+				if (ShellSubStage == 5)
+				{
+					UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget();
+					const bool bUnhovered = (Subsystem->GetTemporaryActiveActor() == nullptr)
+						&& HoverPopup && (HoverPopup->GetVisibility() == ESlateVisibility::Collapsed);
+					if (!bUnhovered && (StageTicks - ShellStepTick < 60))
+					{
+						return false;
+					}
+
+					Test->TestNull(
+						FString::Printf(TEXT("TemporaryActiveActor cleared on unhover (actual=%s)"),
+							*GetNameSafe(Subsystem->GetTemporaryActiveActor())),
+						Subsystem->GetTemporaryActiveActor());
+					if (HoverPopup)
+					{
+						Test->TestEqual(TEXT("Shell hover popup Collapsed when unhovered"),
+							HoverPopup->GetVisibility(), ESlateVisibility::Collapsed);
+					}
+
+					// Aim back at TestShell with OrigCamRotation so active hover prompt survives RemoveAllWidgets() in Change View.
+					PC->SetControlRotation(ShellAimRotation);
+					Transition(EStage::VerifyPhotoModePreview);
+					return false;
+				}
+				return false;
+			}
+
+			case EStage::VerifyPhotoModePreview:
+			{
+				if (PreviewInjectTick < 0)
+				{
+					UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget();
+					const FRotator CamRotNow = PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraRotation() : FRotator::ZeroRotator;
+					const bool bReadyForPhotoMode = (StageTicks >= 15)
+						&& CamRotNow.Equals(ShellAimRotation, 1.0f)
+						&& (Subsystem->GetTemporaryActiveActor() == TestShell.Get())
+						&& HoverPopup && HoverPopup->IsPromptShowing();
+					if (!bReadyForPhotoMode)
+					{
+						if (StageTicks >= 90)
+						{
+							Test->AddError(FString::Printf(
+								TEXT("Timed out waiting for TestShell hover before Change View (TemporaryActiveActor=%s)"),
+								*GetNameSafe(Subsystem->GetTemporaryActiveActor())));
+							return true;
+						}
+						return false;
+					}
+
+					if (ChangePhotoModeAction.IsValid())
+					{
+						InputSys->InjectInputForAction(ChangePhotoModeAction.Get(), FInputActionValue(true), {}, {});
+					}
+					PreviewInjectTick = StageTicks;
+					return false;
+				}
+
+				const int32 Elapsed = StageTicks - PreviewInjectTick;
+				if (Elapsed < 3)
+				{
+					return false;
+				}
+
+				if (Elapsed == 3)
+				{
+					TArray<UUserWidget*> FoundPhotoHUDs;
+					UWidgetBlueprintLibrary::GetAllWidgetsOfClass(PlayWorld, FoundPhotoHUDs, UPhotoHUDWidget::StaticClass(), false);
+					Test->TestTrue(TEXT("Entering Change View (PhotoMode) displays WBP_PhotoHUD (UPhotoHUDWidget)"),
+						FoundPhotoHUDs.Num() == 1);
+					if (FoundPhotoHUDs.Num() >= 1)
+					{
+						ActivePhotoHUD = Cast<UPhotoHUDWidget>(FoundPhotoHUDs[0]);
+						Test->TestEqual(TEXT("PhotoMode HUD uses /Game/UI/WBP_PhotoHUD.WBP_PhotoHUD_C"),
+							ActivePhotoHUD->GetClass()->GetPathName(),
+							FString(TEXT("/Game/UI/WBP_PhotoHUD.WBP_PhotoHUD_C")));
+						Test->TestTrue(TEXT("WBP_PhotoHUD is in viewport"), ActivePhotoHUD->IsInViewport());
+
+						UUserWidget* PreviewWidget = ActivePhotoHUD->GetCutPreviewWidget();
+						Test->TestNotNull(TEXT("WBP_PhotoHUD contains WBP_CutPreview"), PreviewWidget);
+						if (PreviewWidget)
+						{
+							Test->TestEqual(TEXT("WBP_CutPreview is Visible when ActiveCutActor is set"),
+								PreviewWidget->GetVisibility(), ESlateVisibility::Visible);
+							UImage* CutImage = Cast<UImage>(PreviewWidget->GetWidgetFromName(TEXT("CutImage")));
+							UMaterialInstanceDynamic* MID = CutImage ? CutImage->GetDynamicMaterial() : nullptr;
+							UTexture* PreviewTex = nullptr;
+							if (MID)
+							{
+								MID->GetTextureParameterValue(FMaterialParameterInfo(TEXT("Texture")), PreviewTex);
+							}
+							Test->TestEqual(TEXT("WBP_PhotoHUD WBP_CutPreview displays ActiveCutActor RenderTarget"),
+								PreviewTex, static_cast<UTexture*>(SpawnedCut2Weak.IsValid() ? SpawnedCut2Weak->RenderTarget.Get() : nullptr));
+						}
+					}
+
+					// Hover prompt must stay attached across RemoveAllWidgets() mode swap.
+					if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+					{
+						Test->TestTrue(TEXT("Hover prompt stays in viewport across Change View transition"),
+							HoverPopup->IsPromptShowing() && HoverPopup->IsInViewport());
+					}
+
+					// Cycle Cut via IA_NextCut in PhotoMode to verify live preview sync while in Change View.
+					CutBeforeScrollInPhotoMode = Subsystem->GetActiveCutActor();
+					if (NextCutAction.IsValid())
+					{
+						InputSys->InjectInputForAction(NextCutAction.Get(), FInputActionValue(true), {}, {});
+					}
+					return false;
+				}
+
+				if (Elapsed == 6)
+				{
+					ACutActor* CutAfterScroll = Subsystem->GetActiveCutActor();
+					Test->TestNotNull(TEXT("ActiveCutActor valid after IA_NextCut in Change View"), CutAfterScroll);
+					Test->TestNotEqual(TEXT("IA_NextCut cycled ActiveCutActor in Change View (IMC_PhotoMode)"),
+						CutAfterScroll, CutBeforeScrollInPhotoMode.Get());
+					if (ActivePhotoHUD.IsValid())
+					{
+						if (UUserWidget* PreviewWidget = ActivePhotoHUD->GetCutPreviewWidget())
+						{
+							UImage* CutImage = Cast<UImage>(PreviewWidget->GetWidgetFromName(TEXT("CutImage")));
+							UMaterialInstanceDynamic* MID = CutImage ? CutImage->GetDynamicMaterial() : nullptr;
+							UTexture* PreviewTex = nullptr;
+							if (MID)
+							{
+								MID->GetTextureParameterValue(FMaterialParameterInfo(TEXT("Texture")), PreviewTex);
+							}
+							Test->TestEqual(TEXT("WBP_PhotoHUD WBP_CutPreview live-updated after IA_NextCut"),
+								PreviewTex, static_cast<UTexture*>(CutAfterScroll ? CutAfterScroll->RenderTarget.Get() : nullptr));
+						}
+					}
+
+					// Clearing ActiveCutActor while in Change View should hide WBP_CutPreview.
+					Subsystem->SetActiveCutActor(nullptr);
+					return false;
+				}
+
+				if (Elapsed == 8)
+				{
+					if (ActivePhotoHUD.IsValid())
+					{
+						if (UUserWidget* PreviewWidget = ActivePhotoHUD->GetCutPreviewWidget())
+						{
+							Test->TestEqual(TEXT("WBP_CutPreview Hidden when ActiveCutActor cleared in Change View"),
+								PreviewWidget->GetVisibility(), ESlateVisibility::Hidden);
+						}
+					}
+					// Toggle back out of Change View cleanly.
+					if (ChangePhotoModeAction.IsValid())
+					{
+						InputSys->InjectInputForAction(ChangePhotoModeAction.Get(), FInputActionValue(true), {}, {});
+					}
+					return false;
+				}
+
+				if (Elapsed < 10)
+				{
+					return false;
+				}
+
+				if (Elapsed == 10)
+				{
+					if (SpawnedCut2Weak.IsValid())
+					{
+						SpawnedCut2Weak->SetActiveCutActor();
+					}
+					if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+					{
+						Test->TestTrue(TEXT("Hover prompt showing after exiting Change View before entering Film Mode"),
+							HoverPopup->IsPromptShowing());
+					}
+					if (UInputAction* ChangeModeAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ChangeMode.IA_ChangeMode")))
+					{
+						InputSys->InjectInputForAction(ChangeModeAction, FInputActionValue(true), {}, {});
+					}
+					else
+					{
+						Test->AddError(TEXT("Missing /Game/Input/Actions/IA_ChangeMode"));
+						return true;
+					}
+					return false;
+				}
+
+				if (Elapsed == 12)
+				{
+					Test->TestTrue(TEXT("Entered Film Mode via IA_ChangeMode"), Subsystem->GetFilmMode());
+					if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+					{
+						Test->TestFalse(TEXT("Hover prompt NOT showing inside Film Mode"), HoverPopup->IsPromptShowing());
+						Test->TestEqual(TEXT("Hover popup Collapsed inside Film Mode"),
+							HoverPopup->GetVisibility(), ESlateVisibility::Collapsed);
+					}
+					if (UInputAction* ChangeModeAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ChangeMode.IA_ChangeMode")))
+					{
+						InputSys->InjectInputForAction(ChangeModeAction, FInputActionValue(true), {}, {});
+					}
+					return false;
+				}
+
+				if (Elapsed < 14)
+				{
+					return false;
+				}
+
+				Test->TestFalse(TEXT("Exited Film Mode via IA_ChangeMode"), Subsystem->GetFilmMode());
+				if (UPhotoHoverPromptWidget* HoverPopup = ControlActor->GetPhotoHoverPromptWidget())
+				{
+					Test->TestTrue(TEXT("Hover prompt restored when exiting Film Mode while still hovering"),
+						HoverPopup->IsPromptShowing());
+				}
 				return true;
 			}
 			}
@@ -572,32 +1059,57 @@ namespace CutPointPhotoVerifyInternal
 			VerifyFixedPopupAtFarDistance,
 			VerifyFirstInteraction,
 			VerifyReuseAndRespawn,
-			VerifyPopupHidesOnUnhover
+			VerifyPopupHidesOnUnhover,
+			VerifySelectableShellPrompts,
+			VerifyPhotoModePreview
 		};
 
 		void Transition(EStage NextStage)
 		{
 			Stage = NextStage;
 			StageTicks = 0;
+			ShellSubStage = 0;
+			ShellStableTicks = 0;
+			ShellStepTick = 0;
+			PreviewInjectTick = -1;
+			LastShellCamLoc = FVector(FLT_MAX);
+			LastShellCamRot = FRotator::ZeroRotator;
 		}
 
 		FAutomationTestBase* Test = nullptr;
 		EStage Stage = EStage::InitAndSpawn;
 		int32 StageTicks = 0;
 		int32 WaitTicks = 0;
+		int32 ShellSubStage = 0;
+		int32 ShellStableTicks = 0;
+		int32 ShellStepTick = 0;
+		int32 PreviewInjectTick = -1;
 
 		FVector CutPointLocation = FVector::ZeroVector;
 		FRotator CutPointRotation = FRotator::ZeroRotator;
 		FVector OrigPhotoLocation = FVector::ZeroVector;
+		FRotator OrigCamRotation = FRotator::ZeroRotator;
+		FRotator ShellAimRotation = FRotator::ZeroRotator;
+		FVector LastShellCamLoc = FVector(FLT_MAX);
+		FRotator LastShellCamRot = FRotator::ZeroRotator;
+		FVector ShellRayStartSave = FVector::ZeroVector;
+		FVector ShellRayDirSave = FVector::ForwardVector;
 		FVector2D ClosePopupScreenSize = FVector2D::ZeroVector;
+		TWeakObjectPtr<UStaticMeshComponent> TestShellCube;
 
 		TWeakObjectPtr<UInputAction> SelectAction;
+		TWeakObjectPtr<UInputAction> ChangePhotoModeAction;
+		TWeakObjectPtr<UInputAction> NextCutAction;
 		TWeakObjectPtr<AStaticMeshActor> TargetBox;
 		TWeakObjectPtr<ACutPoint> CutPoint;
 		TWeakObjectPtr<APhotoActor> PhotoActor;
 		TWeakObjectPtr<ACutPoint> RawCutPoint;
 		TWeakObjectPtr<APhotoActor> RawPhotoActor;
 		TWeakObjectPtr<ACutActor> SpawnedCut1;
+		TWeakObjectPtr<ACutActor> SpawnedCut2Weak;
+		TWeakObjectPtr<ACutActor> CutBeforeScrollInPhotoMode;
+		TWeakObjectPtr<ASelectableActorShell> TestShell;
+		TWeakObjectPtr<UPhotoHUDWidget> ActivePhotoHUD;
 		TArray<FColor> InitialPixels;
 	};
 }

@@ -92,6 +92,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Shell|Hover", meta = (ClampMin = "1", ClampMax = "255"))
 	int32 HoverStencilValue = 2;
 
+	/** Default hover prompt text when FilmMask is off or outside Checkerboard/SolidColor modes ("Clip Edit"). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Shell|Hover")
+	FText HoverPromptText;
+
+	/** Hover prompt text shown when FilmMask is in Checkerboard mode ("Object Cut Out"). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Shell|Hover")
+	FText CheckerboardPromptText;
+
+	/** Hover prompt text shown when FilmMask is in SolidColor mode ("Please Set a Photo as Background"). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Select Shell|Hover")
+	FText SolidColorPromptText;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Select Shell|Hover")
 	bool bTemporarilyActive = false;
 
@@ -100,6 +112,14 @@ public:
 		bTemporarilyActive = bActive;
 		UpdateSelectionState();
 	}
+
+	/** Resolves the crosshair hover popup text and dimmed flag based on current FilmStyle SelectActor state. */
+	UFUNCTION(BlueprintPure, Category = "Select Shell|Hover")
+	void GetResolvedHoverPrompt(FText& OutPromptText, bool& bOutDimmed) const;
+
+	/** Convenience Blueprint-pure accessor returning the current state's hover prompt text. */
+	UFUNCTION(BlueprintPure, Category = "Select Shell|Hover")
+	FText GetHoverPromptText() const;
 
 private:
 	void CheckPlayerPortalContact();

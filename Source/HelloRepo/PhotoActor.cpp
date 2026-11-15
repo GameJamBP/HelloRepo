@@ -53,6 +53,7 @@ APhotoActor::APhotoActor()
 		FSoftObjectPath(TEXT("/Game/CommonActor/M_PhotoSurface.M_PhotoSurface")));
 
 	HoverPromptText = NSLOCTEXT("PhotoActor", "DefaultHoverPrompt", "Get Cut Clip");
+	AcquiredPromptText = NSLOCTEXT("PhotoActor", "AlreadyAcquiredHoverPrompt", "Already Acquired");
 
 	UpdatePhotoLayout(CurrentAspectRatio);
 }
@@ -210,6 +211,29 @@ void APhotoActor::SetHovered(const bool bNewHovered)
 	{
 		OnHoverStateChanged(bIsHovered);
 	}
+}
+
+bool APhotoActor::IsAlreadyAcquiredInCutList() const
+{
+	if (!IsValid(LinkedCutPoint))
+	{
+		return false;
+	}
+
+	ACutActor* SpawnedCut = LinkedCutPoint->GetSpawnedCutActor();
+	if (!IsValid(SpawnedCut))
+	{
+		return false;
+	}
+
+	const UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this);
+	return Subsystem != nullptr && Subsystem->GetCutActors().Contains(SpawnedCut);
+}
+
+void APhotoActor::GetResolvedHoverPrompt(FText& OutPromptText, bool& bOutDimmed) const
+{
+	bOutDimmed = IsAlreadyAcquiredInCutList();
+	OutPromptText = bOutDimmed ? AcquiredPromptText : HoverPromptText;
 }
 
 bool APhotoActor::CanInteractFromLocation(const FVector& InteractorLocation) const

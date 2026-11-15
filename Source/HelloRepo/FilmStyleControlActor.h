@@ -5,7 +5,10 @@
 #include "FilmStyleControlActor.generated.h"
 
 class AFilmStyleSetting;
+class ACutActor;
 class APhotoActor;
+class ASelectableActorShell;
+struct FSelectActorStateData;
 class UPhotoHoverPromptWidget;
 
 UCLASS(Blueprintable)
@@ -65,11 +68,22 @@ private:
 	void ScrollCut(int32 Direction);
 
 	void HandleHoveredPhotoActorChanged(APhotoActor* PreviousPhoto, APhotoActor* NewPhoto);
+	void HandleTemporaryActiveActorChanged(ASelectableActorShell* PreviousActor, ASelectableActorShell* NewActor);
+	void HandleCutActorsChanged();
+	void HandleActiveCutActorChanged(ACutActor* PreviousCutActor, ACutActor* NewCutActor);
+	void HandleSelectActorDataChanged(const FSelectActorStateData& NewData);
+	void HandleFilmModeChanged(bool bNewFilmMode);
+	void RefreshHoverPrompt();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPhotoHoverPromptWidget> PhotoHoverPromptWidget;
 
 	FDelegateHandle HoveredPhotoChangedHandle;
+	FDelegateHandle TemporaryActiveActorChangedHandle;
+	FDelegateHandle CutActorsChangedHandle;
+	FDelegateHandle ActiveCutActorChangedHandle;
+	FDelegateHandle SelectActorDataChangedHandle;
+	FDelegateHandle FilmModeChangedHandle;
 
 	// Input runs before the camera update; apply clicks after this frame's trace.
 	bool bSelectionRequested = false;

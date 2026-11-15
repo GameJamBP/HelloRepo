@@ -38,7 +38,17 @@ void AFilmStyleControlActor::BeginPlay()
 	{
 		HoveredPhotoChangedHandle = Context->GetOnHoveredPhotoActorChangedNative().AddUObject(
 			this, &AFilmStyleControlActor::HandleHoveredPhotoActorChanged);
-		HandleHoveredPhotoActorChanged(nullptr, Context->GetTemporaryHoveredPhotoActor());
+		TemporaryActiveActorChangedHandle = Context->GetOnTemporaryActiveActorChangedNative().AddUObject(
+			this, &AFilmStyleControlActor::HandleTemporaryActiveActorChanged);
+		CutActorsChangedHandle = Context->GetOnCutActorsChangedNative().AddUObject(
+			this, &AFilmStyleControlActor::HandleCutActorsChanged);
+		ActiveCutActorChangedHandle = Context->GetOnActiveCutActorChangedNative().AddUObject(
+			this, &AFilmStyleControlActor::HandleActiveCutActorChanged);
+		SelectActorDataChangedHandle = Context->GetOnSelectActorDataChangedNative().AddUObject(
+			this, &AFilmStyleControlActor::HandleSelectActorDataChanged);
+		FilmModeChangedHandle = Context->GetOnFilmModeChangedNative().AddUObject(
+			this, &AFilmStyleControlActor::HandleFilmModeChanged);
+		RefreshHoverPrompt();
 	}
 }
 
@@ -117,7 +127,14 @@ void AFilmStyleControlActor::Tick(float DeltaSeconds)
 		else if (IsValid(HoveredPhoto))
 		{
 			HoveredPhoto->Interact(PC ? PC->GetPawn() : nullptr);
+			RefreshHoverPrompt();
 		}
+	}
+
+	// Re-attach if UI mode switching called RemoveAllWidgets() while a hover prompt is active.
+	if (!Context->GetFilmMode() && PhotoHoverPromptWidget && PhotoHoverPromptWidget->IsPromptShowing() && !PhotoHoverPromptWidget->IsInViewport())
+	{
+		PhotoHoverPromptWidget->AddToPlayerScreen(50);
 	}
 }
 
@@ -210,9 +227,64 @@ void AFilmStyleControlActor::ScrollCut(int32 Direction)
 	Context->SetActiveCutActor(Cuts[ActiveCutIndex]);
 }
 
-void AFilmStyleControlActor::HandleHoveredPhotoActorChanged(APhotoActor* /*PreviousPhoto*/, APhotoActor* NewPhoto)
+void AFilmStyleControlActor::HandleHoveredPhotoActorChanged(APhotoActor* /*PreviousPhoto*/, APhotoActor* /*NewPhoto*/)
 {
-	if (!IsValid(NewPhoto))
+	RefreshHoverPrompt();
+}
+
+void AFilmStyleControlActor::HandleTemporaryActiveActorChanged(ASelectableActorShell* /*PreviousActor*/, ASelectableActorShell* /*NewActor*/)
+{
+	RefreshHoverPrompt();
+}
+
+void AFilmStyleControlActor::HandleCutActorsChanged()
+{
+	RefreshHoverPrompt();
+}
+
+void AFilmStyleControlActor::HandleActiveCutActorChanged(ACutActor* /*PreviousCutActor*/, ACutActor* /*NewCutActor*/)
+{
+	RefreshHoverPrompt();
+}
+
+void AFilmStyleControlActor::HandleSelectActorDataChanged(const FSelectActorStateData& /*NewData*/)
+{
+	RefreshHoverPrompt();
+}
+
+void AFilmStyleControlActor::HandleFilmModeChanged(bool /*bNewFilmMode*/)
+{
+	RefreshHoverPrompt();
+}
+
+void AFilmStyleControlActor::RefreshHoverPrompt()
+{
+	UFilmStyleSubsystem* Context = UFilmStyleSubsystem::Get(this);
+	if (!Context || Context->GetFilmMode())
+	{
+		if (PhotoHoverPromptWidget)
+		{
+			PhotoHoverPromptWidget->HidePrompt();
+		}
+		return;
+	}
+
+	FText PromptText;
+	bool bDimmed = false;
+	bool bShouldShow = false;
+
+	if (APhotoActor* HoveredPhoto = Context->GetTemporaryHoveredPhotoActor(); IsValid(HoveredPhoto))
+	{
+		HoveredPhoto->GetResolvedHoverPrompt(PromptText, bDimmed);
+		bShouldShow = true;
+	}
+	else if (ASelectableActorShell* HoveredShell = Context->GetTemporaryActiveActor(); IsValid(HoveredShell))
+	{
+		HoveredShell->GetResolvedHoverPrompt(PromptText, bDimmed);
+		bShouldShow = true;
+	}
+
+	if (!bShouldShow)
 	{
 		if (PhotoHoverPromptWidget)
 		{
@@ -253,7 +325,7 @@ void AFilmStyleControlActor::HandleHoveredPhotoActorChanged(APhotoActor* /*Previ
 		{
 			PhotoHoverPromptWidget->AddToPlayerScreen(50);
 		}
-		PhotoHoverPromptWidget->ShowPrompt(NewPhoto->GetHoverPromptText());
+		PhotoHoverPromptWidget->ShowPrompt(PromptText, bDimmed);
 	}
 }
 
@@ -266,6 +338,31 @@ void AFilmStyleControlActor::EndPlay(const EEndPlayReason::Type Reason)
 		{
 			Context->GetOnHoveredPhotoActorChangedNative().Remove(HoveredPhotoChangedHandle);
 			HoveredPhotoChangedHandle.Reset();
+		}
+		if (TemporaryActiveActorChangedHandle.IsValid())
+		{
+			Context->GetOnTemporaryActiveActorChangedNative().Remove(TemporaryActiveActorChangedHandle);
+			TemporaryActiveActorChangedHandle.Reset();
+		}
+		if (CutActorsChangedHandle.IsValid())
+		{
+			Context->GetOnCutActorsChangedNative().Remove(CutActorsChangedHandle);
+			CutActorsChangedHandle.Reset();
+		}
+		if (ActiveCutActorChangedHandle.IsValid())
+		{
+			Context->GetOnActiveCutActorChangedNative().Remove(ActiveCutActorChangedHandle);
+			ActiveCutActorChangedHandle.Reset();
+		}
+		if (SelectActorDataChangedHandle.IsValid())
+		{
+			Context->GetOnSelectActorDataChangedNative().Remove(SelectActorDataChangedHandle);
+			SelectActorDataChangedHandle.Reset();
+		}
+		if (FilmModeChangedHandle.IsValid())
+		{
+			Context->GetOnFilmModeChangedNative().Remove(FilmModeChangedHandle);
+			FilmModeChangedHandle.Reset();
 		}
 		Context->SetTemporaryActiveActor(nullptr);
 		Context->SetTemporaryHoveredPhotoActor(nullptr);

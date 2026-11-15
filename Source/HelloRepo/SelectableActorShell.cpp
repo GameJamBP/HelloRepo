@@ -17,6 +17,10 @@ ASelectableActorShell::ASelectableActorShell()
 
 	DefaultSceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("DefaultSceneRoot"));
 	SetRootComponent(DefaultSceneRoot);
+
+	HoverPromptText = NSLOCTEXT("SelectableActorShell", "DefaultHoverPrompt", "Clip Edit");
+	CheckerboardPromptText = NSLOCTEXT("SelectableActorShell", "CheckerboardHoverPrompt", "Object Cut Out");
+	SolidColorPromptText = NSLOCTEXT("SelectableActorShell", "SolidColorHoverPrompt", "Please Set a Photo as Background");
 }
 
 void ASelectableActorShell::OnConstruction(const FTransform& Transform)
@@ -191,6 +195,34 @@ void ASelectableActorShell::SetActorSelected(bool bNewSelected)
 {
 	bIsSelected = bNewSelected;
 	UpdateSelectionState();
+}
+
+void ASelectableActorShell::GetResolvedHoverPrompt(FText& OutPromptText, bool& bOutDimmed) const
+{
+	const UFilmStyleSubsystem* Subsystem = UFilmStyleSubsystem::Get(this);
+	const FSelectActorStateData& StateData = Subsystem ? Subsystem->GetSelectActorData() : CachedSelectActorData;
+
+	bOutDimmed = false;
+	if (StateData.IsCheckerboardState())
+	{
+		OutPromptText = CheckerboardPromptText;
+	}
+	else if (StateData.IsSolidColorState())
+	{
+		OutPromptText = SolidColorPromptText;
+	}
+	else
+	{
+		OutPromptText = HoverPromptText;
+	}
+}
+
+FText ASelectableActorShell::GetHoverPromptText() const
+{
+	FText PromptText;
+	bool bIgnoredDimmed = false;
+	GetResolvedHoverPrompt(PromptText, bIgnoredDimmed);
+	return PromptText;
 }
 
 void ASelectableActorShell::UpdateSelectionState()

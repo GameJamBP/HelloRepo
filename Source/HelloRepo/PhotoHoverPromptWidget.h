@@ -13,8 +13,9 @@ class UTextBlock;
 class UTexture2D;
 
 /**
- * Fixed screen-space popup displayed while the crosshair hovers an APhotoActor.
- * Styled to match WBP_HUD / WBP_Key and defaults to displaying "Get Cut Clip".
+ * Fixed screen-space popup displayed while the crosshair hovers an APhotoActor or ASelectableActorShell.
+ * Styled to match WBP_HUD / WBP_Key, supports active and dimmed/grayed visual states,
+ * and maintains fixed screen-space height/padding with width sized cleanly to fit longer prompts.
  */
 UCLASS(BlueprintType, Blueprintable, meta = (DisplayName = "Photo Hover Prompt Widget"))
 class HELLOREPO_API UPhotoHoverPromptWidget : public UUserWidget
@@ -56,13 +57,29 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance")
 	FLinearColor PromptTextColor = FLinearColor(0.97f, 0.97f, 0.97f, 1.0f);
 
+	/** Card background tint when displaying a dimmed/grayed state (e.g. "Already Acquired"). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance|Dimmed")
+	FLinearColor DimmedBackgroundColor = FLinearColor(0.05f, 0.052f, 0.06f, 0.56f);
+
+	/** Border outline color when displaying a dimmed/grayed state. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance|Dimmed")
+	FLinearColor DimmedOutlineColor = FLinearColor(0.65f, 0.65f, 0.68f, 0.14f);
+
+	/** Prompt text color when displaying a dimmed/grayed state. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance|Dimmed")
+	FLinearColor DimmedPromptTextColor = FLinearColor(0.56f, 0.58f, 0.62f, 0.85f);
+
+	/** Key icon tint when displaying a dimmed/grayed state. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance|Dimmed")
+	FLinearColor DimmedKeyIconColor = FLinearColor(0.56f, 0.58f, 0.62f, 0.55f);
+
 	/** Duration in seconds for the pop-in fade and subtle scale-in animation. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float RevealDuration = 0.12f;
 
-	/** Displays the popup in fixed screen space with the supplied text (defaults to "Get Cut Clip"). */
+	/** Displays the popup in fixed screen space with the supplied text (defaults to "Get Cut Clip") and optional dimmed styling. */
 	UFUNCTION(BlueprintCallable, Category = "Photo|UI")
-	void ShowPrompt(const FText& InPromptText);
+	void ShowPrompt(const FText& InPromptText, bool bInDimmed = false);
 
 	/** Hides the popup cleanly without destroying the widget instance. */
 	UFUNCTION(BlueprintCallable, Category = "Photo|UI")
@@ -72,9 +89,25 @@ public:
 	FText GetPromptText() const;
 
 	UFUNCTION(BlueprintPure, Category = "Photo|UI")
+	bool IsPromptShowing() const { return bIsShowing && GetVisibility() != ESlateVisibility::Collapsed; }
+
+	UFUNCTION(BlueprintPure, Category = "Photo|UI")
+	bool IsDimmed() const { return bDimmed; }
+
+	UFUNCTION(BlueprintPure, Category = "Photo|UI")
 	FVector2D GetFixedPopupSize() const { return FixedPopupSize; }
 
+	UFUNCTION(BlueprintPure, Category = "Photo|UI")
+	FVector2D GetResolvedPopupSize() const { return ResolvedPopupSize; }
+
+	FLinearColor GetActiveBackgroundColor() const { return bDimmed ? DimmedBackgroundColor : BackgroundColor; }
+	FLinearColor GetActiveOutlineColor() const { return bDimmed ? DimmedOutlineColor : OutlineColor; }
+	FLinearColor GetActiveTextColor() const { return bDimmed ? DimmedPromptTextColor : PromptTextColor; }
+	FLinearColor GetActiveKeyIconColor() const { return bDimmed ? DimmedKeyIconColor : FLinearColor::White; }
+
 	USizeBox* GetPopupSizeBox() const { return PopupSizeBox; }
+	UBorder* GetPopupBorder() const { return PopupBorder; }
+	UImage* GetKeyIconImage() const { return KeyIconImage; }
 	UTextBlock* GetPromptTextBlock() const { return PromptTextBlock; }
 
 protected:
@@ -109,6 +142,8 @@ private:
 	TObjectPtr<UTexture2D> LoadedKeyIconTexture;
 
 	FText CurrentPromptText;
+	FVector2D ResolvedPopupSize = FVector2D(224.0f, 48.0f);
 	bool bIsShowing = false;
+	bool bDimmed = false;
 	float RevealElapsed = 0.0f;
 };

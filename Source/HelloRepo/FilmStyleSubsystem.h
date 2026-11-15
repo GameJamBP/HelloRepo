@@ -67,10 +67,35 @@ struct HELLOREPO_API FSelectActorStateData
 		return bHasValidSelectActor && bEnable && bEnableFilmMask && (FilmMaskMode == ESelectFilmMaskMode::RenderTarget);
 	}
 
+	/** Returns true when SelectActor is active and in SolidColor state. */
+	bool IsSolidColorState() const
+	{
+		return bHasValidSelectActor && bEnable && bEnableFilmMask && (FilmMaskMode == ESelectFilmMaskMode::SolidColor);
+	}
+
 	/** Returns true when SelectActor is in Checkerboard or RenderTarget state (player can pass through). */
 	bool IsPassThroughState() const
 	{
 		return IsCheckerboardState() || IsRenderTargetState();
+	}
+
+	bool operator==(const FSelectActorStateData& Other) const
+	{
+		return bHasValidSelectActor == Other.bHasValidSelectActor
+			&& bEnable == Other.bEnable
+			&& StencilValue == Other.StencilValue
+			&& bEnableOutline == Other.bEnableOutline
+			&& bEnableFilmMask == Other.bEnableFilmMask
+			&& FilmMaskMode == Other.FilmMaskMode
+			&& bEnableFilmMode == Other.bEnableFilmMode
+			&& FilmBlackBarAmount == Other.FilmBlackBarAmount
+			&& FilmGradingAmount == Other.FilmGradingAmount
+			&& RenderTargetOpacity == Other.RenderTargetOpacity;
+	}
+
+	bool operator!=(const FSelectActorStateData& Other) const
+	{
+		return !(*this == Other);
 	}
 };
 
@@ -80,6 +105,11 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleActiveCutActorChangedNative, AC
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleHoveredPhotoChanged,
 	APhotoActor*, PreviousPhotoActor, APhotoActor*, NewPhotoActor);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleHoveredPhotoChangedNative, APhotoActor*, APhotoActor*);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnFilmStyleTemporaryActiveActorChangedNative,
+	ASelectableActorShell*, ASelectableActorShell*);
+DECLARE_MULTICAST_DELEGATE(FOnFilmStyleCutActorsChangedNative);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnFilmStyleSelectActorDataChangedNative, const FSelectActorStateData&);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnFilmStyleFilmModeChangedNative, bool);
 
 /** Owns the world's shared film-style state and active-cut transitions. */
 UCLASS(BlueprintType, DisplayName = "Film Style Subsystem")
@@ -126,6 +156,18 @@ public:
 
 	/** Native listener notified whenever the crosshair-hovered PhotoActor changes. */
 	FOnFilmStyleHoveredPhotoChangedNative& GetOnHoveredPhotoActorChangedNative() { return HoveredPhotoActorChangedNative; }
+
+	/** Native listener notified whenever the crosshair-hovered SelectableActorShell changes. */
+	FOnFilmStyleTemporaryActiveActorChangedNative& GetOnTemporaryActiveActorChangedNative() { return TemporaryActiveActorChangedNative; }
+
+	/** Native listener notified whenever CutActors membership changes (register, evict, unregister, clear). */
+	FOnFilmStyleCutActorsChangedNative& GetOnCutActorsChangedNative() { return CutActorsChangedNative; }
+
+	/** Native listener notified whenever SelectActorData transitions to a different value. */
+	FOnFilmStyleSelectActorDataChangedNative& GetOnSelectActorDataChangedNative() { return SelectActorDataChangedNative; }
+
+	/** Native listener notified whenever FilmMode turns on or off. */
+	FOnFilmStyleFilmModeChangedNative& GetOnFilmModeChangedNative() { return FilmModeChangedNative; }
 
 	UFUNCTION(BlueprintPure, Category = "Film Style|Selection")
 	ASelectableActorShell* GetTemporaryActiveActor() const;
@@ -193,6 +235,10 @@ private:
 	FOnFilmStyleHoveredPhotoChanged OnHoveredPhotoActorChanged;
 
 	FOnFilmStyleHoveredPhotoChangedNative HoveredPhotoActorChangedNative;
+	FOnFilmStyleTemporaryActiveActorChangedNative TemporaryActiveActorChangedNative;
+	FOnFilmStyleCutActorsChangedNative CutActorsChangedNative;
+	FOnFilmStyleSelectActorDataChangedNative SelectActorDataChangedNative;
+	FOnFilmStyleFilmModeChangedNative FilmModeChangedNative;
 	// Serialize listener requests so both delegate broadcasts see a completed transition.
 	bool bIsChangingCutState = false;
 	TArray<TFunction<void()>> PendingCutStateChanges;

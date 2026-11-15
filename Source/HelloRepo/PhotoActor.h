@@ -54,6 +54,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Interaction")
 	FText HoverPromptText;
 
+	/** Prompt text shown (dimmed) when this photo's CutActor is already present in UFilmStyleSubsystem::CutActors. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Interaction")
+	FText AcquiredPromptText;
+
 	/** Automatically scales PhotoMesh and FrameMesh to match the captured viewport aspect ratio. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Appearance")
 	bool bAutoSizeToAspectRatio = true;
@@ -101,6 +105,18 @@ public:
 	/** Returns the localized prompt text displayed when hovering this photo (defaults to "Get Cut Clip"). */
 	UFUNCTION(BlueprintPure, Category = "Photo|Interaction")
 	const FText& GetHoverPromptText() const { return HoverPromptText; }
+
+	/** Returns the localized prompt text displayed when this photo's CutActor is already in the Cut list (defaults to "Already Acquired"). */
+	UFUNCTION(BlueprintPure, Category = "Photo|Interaction")
+	const FText& GetAcquiredPromptText() const { return AcquiredPromptText; }
+
+	/** Returns true when LinkedCutPoint has a spawned CutActor currently registered in UFilmStyleSubsystem::CutActors. */
+	UFUNCTION(BlueprintPure, Category = "Photo|Interaction")
+	bool IsAlreadyAcquiredInCutList() const;
+
+	/** Resolves the current hover prompt text and whether the popup should render dimmed/grayed. */
+	UFUNCTION(BlueprintPure, Category = "Photo|Interaction")
+	void GetResolvedHoverPrompt(FText& OutPromptText, bool& bOutDimmed) const;
 
 	/** Checks whether an interactor at InteractorLocation is within MaxInteractionDistance. */
 	UFUNCTION(BlueprintPure, Category = "Photo|Interaction")
