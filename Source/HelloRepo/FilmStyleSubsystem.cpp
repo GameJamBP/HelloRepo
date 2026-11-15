@@ -1,6 +1,7 @@
 #include "FilmStyleSubsystem.h"
 #include "CutActor.h"
 #include "FilmStyleSetting.h"
+#include "PhotoActor.h"
 #include "SelectableActorShell.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -217,6 +218,10 @@ void UFilmStyleSubsystem::SetSelectActorData(const FSelectActorStateData& InData
 void UFilmStyleSubsystem::SetTemporaryActiveActor(ASelectableActorShell* Actor)
 {
 	if (Actor && (!IsValid(Actor) || Actor->GetWorld() != GetWorld())) return;
+	if (Actor)
+	{
+		SetTemporaryHoveredPhotoActor(nullptr);
+	}
 	if (TemporaryActiveActor.Get() == Actor)
 	{
 		return;
@@ -235,4 +240,31 @@ void UFilmStyleSubsystem::SetTemporaryActiveActor(ASelectableActorShell* Actor)
 ASelectableActorShell* UFilmStyleSubsystem::GetTemporaryActiveActor() const
 {
 	return TemporaryActiveActor.Get();
+}
+
+void UFilmStyleSubsystem::SetTemporaryHoveredPhotoActor(APhotoActor* Actor)
+{
+	if (Actor && (!IsValid(Actor) || Actor->GetWorld() != GetWorld())) return;
+	if (Actor)
+	{
+		SetTemporaryActiveActor(nullptr);
+	}
+	if (TemporaryHoveredPhotoActor.Get() == Actor)
+	{
+		return;
+	}
+	if (APhotoActor* Old = TemporaryHoveredPhotoActor.Get())
+	{
+		Old->SetHovered(false);
+	}
+	TemporaryHoveredPhotoActor = Actor;
+	if (IsValid(Actor))
+	{
+		Actor->SetHovered(true);
+	}
+}
+
+APhotoActor* UFilmStyleSubsystem::GetTemporaryHoveredPhotoActor() const
+{
+	return TemporaryHoveredPhotoActor.Get();
 }

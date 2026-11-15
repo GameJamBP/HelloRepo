@@ -1,5 +1,6 @@
 #include "CutActor.h"
 
+#include "CutPoint.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Engine/GameViewportClient.h"
@@ -74,12 +75,30 @@ bool ACutActor::UpdateRenderTarget()
 	return true;
 }
 
+void ACutActor::ConfigureFromCutPoint(const ACutPoint* CutPoint)
+{
+	if (!IsValid(CutPoint) || !CutPoint->CaptureComponent2D)
+	{
+		return;
+	}
+
+	bUsePresetTransform = true;
+	bPreservePresetProjection = true;
+	SetActorTransform(CutPoint->CaptureComponent2D->GetComponentTransform());
+	CaptureComponent2D->FOVAngle = CutPoint->CaptureComponent2D->FOVAngle;
+	CaptureComponent2D->ProjectionType = CutPoint->CaptureComponent2D->ProjectionType;
+	CaptureComponent2D->OrthoWidth = CutPoint->CaptureComponent2D->OrthoWidth;
+}
+
 void ACutActor::CopyCameraParameters(const APlayerCameraManager* Camera)
 {
 	const FMinimalViewInfo& View = Camera->GetCameraCacheView();
-	CaptureComponent2D->FOVAngle = View.FOV;
-	CaptureComponent2D->ProjectionType = View.ProjectionMode;
-	CaptureComponent2D->OrthoWidth = View.OrthoWidth;
+	if (!bPreservePresetProjection)
+	{
+		CaptureComponent2D->FOVAngle = View.FOV;
+		CaptureComponent2D->ProjectionType = View.ProjectionMode;
+		CaptureComponent2D->OrthoWidth = View.OrthoWidth;
+	}
 	CaptureComponent2D->bOverride_CustomNearClippingPlane = View.PerspectiveNearClipPlane > 0;
 	CaptureComponent2D->CustomNearClippingPlane = View.PerspectiveNearClipPlane;
 	CaptureComponent2D->PostProcessSettings = View.PostProcessSettings;
@@ -96,7 +115,10 @@ void ACutActor::InitializeSnapshot()
 		return;
 	}
 	const FMinimalViewInfo& View = Camera->GetCameraCacheView();
-	SetActorLocationAndRotation(View.Location, View.Rotation);
+	if (!bUsePresetTransform)
+	{
+		SetActorLocationAndRotation(View.Location, View.Rotation);
+	}
 	PreviousPlayerView = FTransform(View.Rotation, View.Location);
 	bHasPreviousPlayerView = true;
 	CopyCameraParameters(Camera);

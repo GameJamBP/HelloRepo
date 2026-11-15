@@ -6,6 +6,7 @@
 #include "FilmStyleSubsystem.generated.h"
 
 class ACutActor;
+class APhotoActor;
 class ASelectableActorShell;
 
 /** Snapshot written by AFilmStyleSetting and read by selectable actors. */
@@ -126,6 +127,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Film Style|Selection")
 	void SetTemporaryActiveActor(ASelectableActorShell* Actor);
 
+	UFUNCTION(BlueprintPure, Category = "Film Style|Selection")
+	APhotoActor* GetTemporaryHoveredPhotoActor() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Film Style|Selection")
+	void SetTemporaryHoveredPhotoActor(APhotoActor* Actor);
+
 	/** Drives the film-mode transition and gameplay state. */
 	UFUNCTION(BlueprintSetter, Category = "Film Style")
 	void SetFilmMode(bool bInFilmMode);
@@ -159,6 +166,9 @@ private:
 	// Keep weak ownership; Blueprint access uses the explicit functions above.
 	UPROPERTY(Transient)
 	TWeakObjectPtr<ASelectableActorShell> TemporaryActiveActor;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<APhotoActor> TemporaryHoveredPhotoActor;
 
 	UPROPERTY(Transient, BlueprintGetter = GetSelectActorData, BlueprintSetter = SetSelectActorData, Category = "Film Style", meta = (AllowPrivateAccess = "true"))
 	FSelectActorStateData SelectActorData;

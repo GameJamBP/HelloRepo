@@ -1,6 +1,7 @@
 #include "FilmStyleControlActor.h"
 #include "FilmStyleSetting.h"
 #include "FilmStyleSubsystem.h"
+#include "PhotoActor.h"
 #include "SelectableActorShell.h"
 #include "CutActor.h"
 #include "Engine/Engine.h"
@@ -43,6 +44,7 @@ void AFilmStyleControlActor::Tick(float DeltaSeconds)
 	}
 
 	ASelectableActorShell* Target = nullptr;
+	APhotoActor* HoveredPhoto = nullptr;
 	if (PC && PC->IsLocalController())
 	{
 		int32 Width;
@@ -54,24 +56,46 @@ void AFilmStyleControlActor::Tick(float DeltaSeconds)
 		{
 			FHitResult Hit;
 			FCollisionQueryParams Params(SCENE_QUERY_STAT(FilmStyleSelection), true, this);
-			if (PC->GetPawn())
+			const APawn* Pawn = PC->GetPawn();
+			if (Pawn)
 			{
-				Params.AddIgnoredActor(PC->GetPawn());
+				Params.AddIgnoredActor(Pawn);
 			}
+			const FVector InteractorLocation = Pawn ? Pawn->GetActorLocation() : Start;
 			if (GetWorld()->LineTraceSingleByChannel(Hit, Start, Start + Direction * TraceDistance, TraceChannel, Params))
 			{
 				for (AActor* Actor = Hit.GetActor(); Actor; Actor = Actor->GetAttachParentActor())
 				{
-					Target = Cast<ASelectableActorShell>(Actor);
-					if (Target)
+					if (ASelectableActorShell* Selectable = Cast<ASelectableActorShell>(Actor))
 					{
+						Target = Selectable;
+						break;
+					}
+					if (APhotoActor* Photo = Cast<APhotoActor>(Actor))
+					{
+						if (Photo->CanInteractFromLocation(InteractorLocation))
+						{
+							HoveredPhoto = Photo;
+						}
 						break;
 					}
 				}
 			}
 		}
 	}
-	Context->SetTemporaryActiveActor(Target);
+	if (IsValid(Target))
+	{
+		Context->SetTemporaryActiveActor(Target);
+	}
+	else if (IsValid(HoveredPhoto))
+	{
+		Context->SetTemporaryHoveredPhotoActor(HoveredPhoto);
+	}
+	else
+	{
+		Context->SetTemporaryActiveActor(nullptr);
+		Context->SetTemporaryHoveredPhotoActor(nullptr);
+	}
 
 	if (bSelectionRequested)
 	{
@@ -79,6 +103,10 @@ void AFilmStyleControlActor::Tick(float DeltaSeconds)
 		if (IsValid(Target))
 		{
 			Target->SetActorSelected(!Target->bIsSelected);
+		}
+		else if (IsValid(HoveredPhoto))
+		{
+			HoveredPhoto->Interact(PC ? PC->GetPawn() : nullptr);
 		}
 	}
 }
@@ -178,6 +206,7 @@ void AFilmStyleControlActor::EndPlay(const EEndPlayReason::Type Reason)
 	if (auto* Context = UFilmStyleSubsystem::Get(this))
 	{
 		Context->SetTemporaryActiveActor(nullptr);
+		Context->SetTemporaryHoveredPhotoActor(nullptr);
 	}
 	Super::EndPlay(Reason);
 }

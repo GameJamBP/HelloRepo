@@ -8,6 +8,7 @@ class USceneCaptureComponent2D;
 class UTextureRenderTarget2D;
 class APlayerCameraManager;
 class UFilmStyleSubsystem;
+class ACutPoint;
 
 /** Owns a frozen camera snapshot until explicitly activated. */
 UCLASS(Blueprintable)
@@ -35,6 +36,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cut")
 	void SetActiveCutActor();
 
+	/** Configures this cut actor to preserve the transform and projection of a CutPoint. */
+	void ConfigureFromCutPoint(const ACutPoint* CutPoint);
+
 	/** Move the local player's view onto this capture. Requires Subsystem.GetFilmMode(). */
 	UFUNCTION(BlueprintCallable, Category = "Cut")
 	bool TeleportPlayerToCapture();
@@ -57,6 +61,8 @@ private:
 	FTransform PreviousPlayerView;
 	bool bHasPreviousPlayerView = false;
 	bool bSnapshotInitialized = false;
+	bool bUsePresetTransform = false;
+	bool bPreservePresetProjection = false;
 	FTimerHandle InitializationTimer;
 	FTimerHandle CleanupTimer;
 };
